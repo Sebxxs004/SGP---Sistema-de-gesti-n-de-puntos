@@ -2,11 +2,15 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu } from 'lucide-react';
 import { useState } from 'react';
+import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
 
 export const MainLayout = () => {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Initialize sync hook. It listens to online/offline globally.
+  const { isSyncing } = useSyncOfflineSales();
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -66,7 +70,12 @@ export const MainLayout = () => {
           </button>
           
           <div className="ml-auto flex items-center gap-4">
-            <span className="text-sm font-medium text-gray-700">
+            {isSyncing && (
+              <span className="text-xs font-medium text-blue-600 animate-pulse bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 hidden sm:inline-block">
+                Sincronizando ventas...
+              </span>
+            )}
+            <span className="text-sm font-medium text-gray-700 border-l border-gray-200 pl-4">
               {user?.email || 'Usuario'}
             </span>
             <button
