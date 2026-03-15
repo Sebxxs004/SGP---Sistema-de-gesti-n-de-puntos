@@ -365,6 +365,26 @@
           "Microsoft.AspNetCore.App"
         ]
       },
+      "Gibag.Modules.Sales/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "dependencies": {
+          "FluentValidation.DependencyInjectionExtensions": "12.1.1",
+          "Gibag.Shared": "1.0.0",
+          "MediatR": "14.1.0",
+          "Microsoft.EntityFrameworkCore": "9.0.2",
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "9.0.3"
+        },
+        "compile": {
+          "bin/placeholder/Gibag.Modules.Sales.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Gibag.Modules.Sales.dll": {}
+        },
+        "frameworkReferences": [
+          "Microsoft.AspNetCore.App"
+        ]
+      },
       "Gibag.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v10.0",
@@ -807,6 +827,11 @@
       "path": "../Gibag.Modules.Inventory/Gibag.Modules.Inventory.csproj",
       "msbuildProject": "../Gibag.Modules.Inventory/Gibag.Modules.Inventory.csproj"
     },
+    "Gibag.Modules.Sales/1.0.0": {
+      "type": "project",
+      "path": "../Gibag.Modules.Sales/Gibag.Modules.Sales.csproj",
+      "msbuildProject": "../Gibag.Modules.Sales/Gibag.Modules.Sales.csproj"
+    },
     "Gibag.Shared/1.0.0": {
       "type": "project",
       "path": "../Gibag.Shared/Gibag.Shared.csproj",
@@ -817,6 +842,7 @@
     "net10.0": [
       "Gibag.Modules.Core >= 1.0.0",
       "Gibag.Modules.Inventory >= 1.0.0",
+      "Gibag.Modules.Sales >= 1.0.0",
       "Gibag.Shared >= 1.0.0",
       "Microsoft.AspNetCore.Authentication.JwtBearer >= 10.0.5",
       "Microsoft.AspNetCore.OpenApi >= 10.0.5",
@@ -853,6 +879,9 @@
             },
             "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Inventory\\Gibag.Modules.Inventory.csproj": {
               "projectPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Inventory\\Gibag.Modules.Inventory.csproj"
+            },
+            "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Sales\\Gibag.Modules.Sales.csproj": {
+              "projectPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Sales\\Gibag.Modules.Sales.csproj"
             },
             "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Shared\\Gibag.Shared.csproj": {
               "projectPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Shared\\Gibag.Shared.csproj"

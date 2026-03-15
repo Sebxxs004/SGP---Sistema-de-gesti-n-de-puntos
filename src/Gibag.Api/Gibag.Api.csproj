@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Gibag.Shared\Gibag.Shared.csproj" />
     <ProjectReference Include="..\Gibag.Modules.Core\Gibag.Modules.Core.csproj" />
     <ProjectReference Include="..\Gibag.Modules.Inventory\Gibag.Modules.Inventory.csproj" />
+    <ProjectReference Include="..\Gibag.Modules.Sales\Gibag.Modules.Sales.csproj" />
   </ItemGroup>
 
 </Project>
