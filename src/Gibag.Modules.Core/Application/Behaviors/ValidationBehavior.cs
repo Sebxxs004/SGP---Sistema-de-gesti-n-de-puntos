@@ -44,7 +44,7 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
             // or we return a standard Result failure if it's just Result.
             // Simplified validation failure for the Result Pattern
             var firstError = errorsDictionary.First();
-            var errorMessage = $"{firstError.Key}: {string.Join(", ", firstError.Values)}";
+            var errorMessage = $"{firstError.Key}: {string.Join(", ", firstError.Value)}";
             
             // This is a simplistic approach requiring reflection to return Result<T>. 
             // Usually, a specific ValidationResult class inheriting from Result is used.

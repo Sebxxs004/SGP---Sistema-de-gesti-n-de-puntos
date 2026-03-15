@@ -6,4 +6,8 @@
     <Project Path="src/Gibag.Modules.Sales/Gibag.Modules.Sales.csproj" />
     <Project Path="src/Gibag.Shared/Gibag.Shared.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Gibag.Modules.Core.Tests/Gibag.Modules.Core.Tests.csproj" />
+    <Project Path="tests/Gibag.Modules.Inventory.Tests/Gibag.Modules.Inventory.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -24,7 +24,7 @@ public static class DependencyInjection
         services.AddMediatR(config =>
         {
             config.RegisterServicesFromAssembly(assembly);
-            config.AddOpenBehavior(typeof(ValidationBehavior<,>));
+            config.AddOpenBehavior(typeof(Gibag.Modules.Inventory.Application.Behaviors.ValidationBehavior<,>));
         });
 
         services.AddValidatorsFromAssembly(assembly);

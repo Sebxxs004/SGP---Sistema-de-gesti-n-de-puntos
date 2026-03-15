@@ -1,4 +1,4 @@
-using System.IdentityModel.Tokens.Jwt;
+using Microsoft.IdentityModel.JsonWebTokens;
 using System.Security.Claims;
 using System.Text;
 using Gibag.Modules.Core.Application.Interfaces;
@@ -49,9 +49,9 @@ public class JwtProvider : IJwtProvider
             SigningCredentials = credentials
         };
 
-        var handler = new JwtSecurityTokenHandler();
+        var handler = new JsonWebTokenHandler();
         var token = handler.CreateToken(tokenDescriptor);
 
-        return handler.WriteToken(token);
+        return token;
     }
 }

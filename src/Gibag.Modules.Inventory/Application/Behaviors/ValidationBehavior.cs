@@ -41,7 +41,7 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
         if (errorsDictionary.Count != 0)
         {
             var firstError = errorsDictionary.First();
-            var errorMessage = $"{firstError.Key}: {string.Join(", ", firstError.Values)}";
+            var errorMessage = $"{firstError.Key}: {string.Join(", ", firstError.Value)}";
             
             var responseType = typeof(TResponse);
             
