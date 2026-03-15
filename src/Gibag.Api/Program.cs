@@ -1,6 +1,7 @@
 using Gibag.Api.Middlewares;
 using Gibag.Api.Services;
 using Gibag.Modules.Core;
+using Gibag.Modules.Inventory;
 using Gibag.Shared.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -19,6 +20,7 @@ builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentTena
 
 // Register Modules
 builder.Services.AddCoreModule(builder.Configuration);
+builder.Services.AddInventoryModule(builder.Configuration);
 
 // Configure JWT Authentication
 var jwtSecret = builder.Configuration["JwtOptions:SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey missing");

@@ -19,17 +19,11 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<string>>
 
     public async Task<Result<string>> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        // 1. We must search for the user globally ignoring query filters if we don't have a tenant context at login time.
-        // During login, the user provides email/password without a TenantId in headers usually.
-        // Therefore, we query without Tenant filters if needed, OR we assume the TenantId is resolved.
-        // Wait, the rules say "Un mismo correo puede existir en la plataforma, pero no duplicado dentro de la misma empresa".
-        // If a user belongs to multiple tenants with the same email, how do they log in? 
-        // Typically, B2B SaaS requires either a 'tenant slug' in the URL, or user selects tenant after login.
-        // For now, let's search ignoring query filters and picking the first matching active user, or require the tenant_id. 
-        // As a standard MVP approach, we find the first match ignoring filter to authenticate.
+        // El cliente debe enviar el header X-Tenant-Id al hacer login.
+        // El TenantResolutionMiddleware inyecta el TenantId en el contexto,
+        // por lo que el CoreDbContext filtrará automáticamente la búsqueda al Tenant correcto.
         
         var user = await _dbContext.Users
-            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == request.Email, cancellationToken);
 
         if (user is null)
