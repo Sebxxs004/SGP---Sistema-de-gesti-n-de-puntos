@@ -9,6 +9,24 @@ import { isAxiosError } from 'axios';
 import { getCatalogLastSyncAt, getCatalogProducts, syncCatalog } from '../services/CatalogSyncService';
 import type { CatalogProduct } from '../db/db';
 
+interface SessionSaleHistoryItem {
+  id: string;
+  createdAt: string;
+  subTotal: number;
+  tax: number;
+  total: number;
+  items: number;
+  payments: Array<{ method: string; amount: number }>;
+}
+
+interface SessionSalesHistoryResponse {
+  success: boolean;
+  data: {
+    sessionId: string | null;
+    sales: SessionSaleHistoryItem[];
+  };
+}
+
 interface CartItem {
   id: string; // ProductId
   name: string;
@@ -23,6 +41,8 @@ export const Sales = () => {
   const [paymentMethod, setPaymentMethod] = useState<number>(0); // 0: Cash, 1: CreditCard
   const [isProcessing, setIsProcessing] = useState(false);
   const [isManualCatalogSyncing, setIsManualCatalogSyncing] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [sessionSalesHistory, setSessionSalesHistory] = useState<SessionSaleHistoryItem[]>([]);
   const [lastCatalogSyncAt, setLastCatalogSyncAt] = useState<string | null>(null);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
@@ -74,6 +94,9 @@ export const Sales = () => {
   const tax = subTotal * 0.16; // 16% assumed
   const total = subTotal + tax;
 
+  const formatMoney = (value: number) =>
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(value);
+
   const addToCart = (product: CatalogProduct) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
@@ -95,6 +118,23 @@ export const Sales = () => {
   };
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(item => item.id !== id));
+
+  const refreshSessionHistory = async () => {
+    if (!currentSessionId) {
+      setSessionSalesHistory([]);
+      return;
+    }
+
+    setIsLoadingHistory(true);
+    try {
+      const response = await apiClient.get<SessionSalesHistoryResponse>('/sales/history/current-session');
+      setSessionSalesHistory(response.data.data.sales ?? []);
+    } catch (error) {
+      console.error('Error loading session sales history:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   const handleManualCatalogSync = async () => {
     if (!currentBranchId) {
@@ -119,6 +159,18 @@ export const Sales = () => {
       setTimeout(() => setNotification(null), 4000);
     }
   };
+
+  useEffect(() => {
+    refreshSessionHistory();
+
+    const intervalId = window.setInterval(() => {
+      refreshSessionHistory();
+    }, 20000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentSessionId]);
 
   const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
@@ -203,6 +255,9 @@ export const Sales = () => {
       setIsProcessing(false);
       if (shouldClearCart) {
         setCart([]);
+      }
+      if (shouldClearCart) {
+        refreshSessionHistory();
       }
       setTimeout(() => setNotification(null), 4000);
     }
@@ -319,6 +374,27 @@ export const Sales = () => {
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-700">Historial de Ventas (Sesión)</h3>
+              {isLoadingHistory && <span className="text-xs text-blue-600">Actualizando...</span>}
+            </div>
+            {sessionSalesHistory.length > 0 ? (
+              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                {sessionSalesHistory.map((sale) => (
+                  <div key={sale.id} className="rounded-md border border-gray-100 bg-gray-50 px-2 py-2 text-xs">
+                    <p className="font-semibold text-gray-700">Ticket {sale.id.slice(0, 8)}</p>
+                    <p className="text-gray-500">{new Date(sale.createdAt).toLocaleString()}</p>
+                    <p className="text-gray-700">Items: {sale.items}</p>
+                    <p className="font-semibold text-gray-800">Total: {formatMoney(sale.total)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">No hay ventas registradas en esta sesión.</p>
+            )}
+          </div>
+
           {cart.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400 text-sm">
               El carrito está vacío

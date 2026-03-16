@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Gibag.Modules.Inventory")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3815cd17c4979a83493771de67634b0b306cf3d7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+64f5af74c7f207dafc06d43b278dbf89299d7835")]
 [assembly: System.Reflection.AssemblyProductAttribute("Gibag.Modules.Inventory")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Gibag.Modules.Inventory")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
