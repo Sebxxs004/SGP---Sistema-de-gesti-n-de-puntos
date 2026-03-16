@@ -40,6 +40,8 @@ export interface TicketData {
   subTotal: number;
   tax: number;
   total: number;
+
+  discount?: number; // Optional: discount applied to sale
 }
 
 interface TicketTemplateProps {
@@ -90,6 +92,12 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
           <span>Subtotal</span>
           <span>{formatCurrency(ticket.subTotal, currencySymbol)}</span>
         </div>
+        {ticket.discount && ticket.discount > 0 && (
+          <div className="flex justify-between font-semibold text-orange-600">
+            <span>Descuento</span>
+            <span>-{formatCurrency(ticket.discount, currencySymbol)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span>Impuestos ({taxPercentage.toFixed(2)}%)</span>
           <span>{formatCurrency(ticket.tax, currencySymbol)}</span>

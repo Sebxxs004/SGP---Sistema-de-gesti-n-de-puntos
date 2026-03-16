@@ -71,4 +71,34 @@ public class SalesInventoryIntegrationService : IInventoryService
 
         return Result.Success();
     }
+
+    public async Task<Result> IncrementStockAsync(Guid branchId, Guid productId, decimal quantity, string reference, CancellationToken cancellationToken)
+    {
+        var stock = await _inventoryDbContext.BranchStocks
+            .FirstOrDefaultAsync(bs => bs.BranchId == branchId && bs.ProductId == productId, cancellationToken);
+
+        if (stock == null)
+            return Result.Failure("Inventory.StockNotFound", "No se encontró stock para actualizar.");
+
+        var quantityProperty = stock.GetType().GetProperty("Quantity");
+        if (quantityProperty != null && quantityProperty.CanWrite)
+        {
+            quantityProperty.SetValue(stock, stock.Quantity + quantity);
+        }
+
+        var movement = new StockMovement(
+            stock.TenantId,
+            branchId,
+            productId,
+            Guid.Empty,
+            MovementType.In,
+            quantity,
+            reference
+        );
+
+        await _inventoryDbContext.StockMovements.AddAsync(movement, cancellationToken);
+        await _inventoryDbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
+    }
 }

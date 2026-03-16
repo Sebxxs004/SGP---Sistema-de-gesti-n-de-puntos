@@ -39,7 +39,7 @@ public class CloseCashDrawerCommandHandler : IRequestHandler<CloseCashDrawerComm
 
         var salesTotal = await _dbContext.Sales
             .Where(s => s.SessionId == session.Id)
-            .SumAsync(s => (decimal?)s.Total, cancellationToken) ?? 0m;
+            .SumAsync(s => (decimal?)(s.IsRefunded ? 0m : s.Total), cancellationToken) ?? 0m;
 
         var finalExpected = session.InitialBalance + salesTotal;
         session.Close(request.FinalBalanceEncounted, finalExpected);

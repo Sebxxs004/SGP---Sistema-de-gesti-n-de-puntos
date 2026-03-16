@@ -11,6 +11,7 @@ public record CreateSaleCommand(
     decimal SubTotal,
     decimal Tax,
     decimal Total,
+    decimal Discount, // Total discount (percentage or fixed amount calculated on frontend)
     DateTimeOffset? CreatedAt,
     List<CreateSaleDetailDto> Details,
     List<CreateSalePaymentDto> Payments
@@ -20,7 +21,8 @@ public record CreateSaleDetailDto(
     Guid Id, 
     Guid ProductId,
     decimal Quantity,
-    decimal UnitPrice
+    decimal UnitPrice,
+    decimal DiscountAmount = 0m // Optional: discount per item
 );
 
 public record CreateSalePaymentDto(

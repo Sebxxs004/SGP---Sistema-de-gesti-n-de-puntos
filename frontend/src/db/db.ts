@@ -21,6 +21,7 @@ export interface OfflineSale {
   subTotal: number;
   tax: number;
   total: number;
+  discount: number; // Total discount amount (fixed or percentage-calculated)
   createdAt: string; // ISO String
   details: OfflineSaleDetail[];
   payments: OfflinePayment[];

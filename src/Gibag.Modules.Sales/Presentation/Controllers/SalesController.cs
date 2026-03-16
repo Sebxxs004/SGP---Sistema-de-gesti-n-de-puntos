@@ -1,4 +1,5 @@
 using Gibag.Modules.Sales.Application.Sales.CreateSale;
+using Gibag.Modules.Sales.Application.Sales.RefundSale;
 using Gibag.Modules.Sales.Application.Sessions.CloseCashDrawer;
 using Gibag.Modules.Sales.Application.Sessions.OpenCashDrawer;
 using Gibag.Modules.Sales.Domain;
@@ -62,6 +63,7 @@ public class SalesController : ControllerBase
                 s.SubTotal,
                 s.Tax,
                 s.Total,
+                s.Discount,
                 Details = s.Details.Select(d => new
                 {
                     d.ProductId,
@@ -163,6 +165,7 @@ public class SalesController : ControllerBase
                     amount = p.Amount
                 }),
                 subTotal = saleData.SubTotal,
+                discount = saleData.Discount,
                 tax = saleData.Tax,
                 total = saleData.Total
             }
@@ -348,8 +351,10 @@ public class SalesController : ControllerBase
                 id = s.Id,
                 createdAt = s.CreatedAt,
                 subTotal = s.SubTotal,
+                discount = s.Discount,
                 tax = s.Tax,
                 total = s.Total,
+                isRefunded = s.IsRefunded,
                 items = s.Details.Sum(d => d.Quantity),
                 payments = s.Payments
                     .Select(p => new
@@ -570,4 +575,39 @@ public class SalesController : ControllerBase
             data = new { id = result.Value } 
         });
     }
+
+    [HttpPost("{id}/refund")]
+    public async Task<IActionResult> RefundSale(Guid id, [FromBody] RefundSaleRequest request)
+    {
+        var currentBranchId = _currentUser.BranchId;
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para procesar devoluciones." }
+            });
+        }
+
+        var command = new RefundSaleCommand(id, request.Reason);
+        var result = await _sender.Send(command);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = result.ErrorCode, message = result.ErrorMessage }
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Devolución procesada exitosamente.",
+            data = new { saleId = result.Value }
+        });
+    }
 }
+
+public record RefundSaleRequest(string Reason = "Devolución");

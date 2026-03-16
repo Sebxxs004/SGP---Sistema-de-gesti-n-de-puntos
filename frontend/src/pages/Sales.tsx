@@ -17,10 +17,17 @@ interface SessionSaleHistoryItem {
   id: string;
   createdAt: string;
   subTotal: number;
+  discount: number;
   tax: number;
   total: number;
+  isRefunded: boolean;
   items: number;
   payments: Array<{ method: string; amount: number }>;
+}
+
+interface RefundData {
+  saleId: string;
+  showModal: boolean;
 }
 
 interface SessionSalesHistoryResponse {
@@ -83,6 +90,12 @@ export const Sales = () => {
     finalBalanceEncounted: number;
     difference: number;
   } | null>(null);
+  const [discount, setDiscount] = useState(0);
+  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('fixed');
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [refundData, setRefundData] = useState<RefundData | null>(null);
+  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
+  const [refundedSales, setRefundedSales] = useState<Set<string>>(new Set());
   
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
   const companySettingsQuery = useCompanySettings();
@@ -136,8 +149,10 @@ export const Sales = () => {
   }, [currentBranchId]);
 
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const tax = subTotal * (taxPercentage / 100);
-  const total = subTotal + tax;
+  const discountAmount = discountType === 'percentage' ? (subTotal * discount) / 100 : discount;
+  const subTotalAfterDiscount = Math.max(subTotal - discountAmount, 0);
+  const tax = subTotalAfterDiscount * (taxPercentage / 100);
+  const total = subTotalAfterDiscount + tax;
 
   const formatMoney = (value: number) => formatCurrency(value, currencySymbol);
 
@@ -147,6 +162,7 @@ export const Sales = () => {
     details: OfflineSaleDetail[],
     payments: OfflinePayment[],
     saleSubTotal: number,
+    saleDiscount: number,
     saleTax: number,
     saleTotal: number
   ): TicketData => {
@@ -195,6 +211,7 @@ export const Sales = () => {
       items,
       payments: normalizedPayments,
       subTotal: saleSubTotal,
+      discount: saleDiscount,
       tax: saleTax,
       total: saleTotal,
     };
@@ -257,7 +274,9 @@ export const Sales = () => {
     setIsLoadingHistory(true);
     try {
       const response = await apiClient.get<SessionSalesHistoryResponse>('/sales/history/current-session');
-      setSessionSalesHistory(response.data.data.sales ?? []);
+      const sales = response.data.data.sales ?? [];
+      setSessionSalesHistory(sales);
+      setRefundedSales(new Set(sales.filter((sale) => sale.isRefunded).map((sale) => sale.id)));
     } catch (error) {
       console.error('Error loading session sales history:', error);
     } finally {
@@ -267,7 +286,7 @@ export const Sales = () => {
 
   const handleManualCatalogSync = async () => {
     if (!currentBranchId) {
-      setNotification({ message: 'Selecciona una sucursal activa para sincronizar catálogo.', isError: true });
+      setNotification({ message: 'Selecciona una sucursal activa para sincronizar catalogo.', isError: true });
       return;
     }
 
@@ -277,12 +296,12 @@ export const Sales = () => {
       const result = await syncCatalog(currentBranchId, lastCatalogSyncAt ?? undefined);
       await refreshLocalCatalog();
       setNotification({
-        message: `Catálogo sincronizado (${result.productsCount} productos).`,
+        message: `Catalogo sincronizado (${result.productsCount} productos).`,
         isError: false,
       });
     } catch (error) {
       console.error('Manual catalog sync failed:', error);
-      setNotification({ message: 'No fue posible sincronizar el catálogo.', isError: true });
+      setNotification({ message: 'No fue posible sincronizar el catalogo.', isError: true });
     } finally {
       setIsManualCatalogSyncing(false);
       setTimeout(() => setNotification(null), 4000);
@@ -328,7 +347,7 @@ export const Sales = () => {
       return;
     }
     if (!currentSessionId) {
-      setNotification({ message: 'No tienes una sesión de caja activa para vender.', isError: true });
+      setNotification({ message: 'No tienes una sesion de caja activa para vender.', isError: true });
       return;
     }
 
@@ -362,6 +381,7 @@ export const Sales = () => {
       subTotal,
       tax,
       total,
+      discount: discountAmount,
       createdAt: new Date().toISOString(),
       details,
       payments,
@@ -378,15 +398,15 @@ export const Sales = () => {
           const ticket = await fetchTicketData(registeredSaleId);
           setLastTicketData(ticket);
         } catch {
-          setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, tax, total));
+          setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, discountAmount, tax, total));
         }
 
         setNotification({ message: 'Venta procesada exitosamente.', isError: false });
         shouldClearCart = true;
       } else {
         await db.sales.add(salePayload);
-        setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, tax, total));
-        setNotification({ message: 'Sin conexión. Venta guardada localmente.', isError: false });
+        setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, discountAmount, tax, total));
+        setNotification({ message: 'Sin conexion. Venta guardada localmente.', isError: false });
         shouldClearCart = true;
       }
     } catch (error: unknown) {
@@ -401,8 +421,8 @@ export const Sales = () => {
       if (isNetworkFailure) {
         try {
           await db.sales.add(salePayload);
-          setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, tax, total));
-          setNotification({ message: 'Sin conexión o API no disponible. Venta guardada localmente.', isError: false });
+          setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, discountAmount, tax, total));
+          setNotification({ message: 'Sin conexion o API no disponible. Venta guardada localmente.', isError: false });
           shouldClearCart = true;
         } catch (dbError) {
           console.error('Error guardando en Dexie', dbError);
@@ -415,6 +435,8 @@ export const Sales = () => {
       setIsProcessing(false);
       if (shouldClearCart) {
         setCart([]);
+        setDiscount(0);
+        setDiscountType('fixed');
       }
       if (shouldClearCart) {
         refreshSessionHistory();
@@ -458,6 +480,34 @@ export const Sales = () => {
       setNotification({ message: message ?? 'No fue posible cerrar la caja.', isError: true });
     } finally {
       setIsClosingSession(false);
+    }
+  };
+
+  const handleRefundSale = async () => {
+    if (!refundData?.saleId) return;
+
+    setIsProcessingRefund(true);
+    try {
+      const response = await apiClient.post(`/sales/${refundData.saleId}/refund`, {
+        reason: 'Devolucion'
+      });
+
+      if (response.data?.success) {
+        setRefundedSales((prev) => new Set([...prev, refundData.saleId]));
+        setNotification({ message: 'Devolucion procesada exitosamente.', isError: false });
+        setTimeout(() => setNotification(null), 4000);
+      }
+    } catch (error) {
+      console.error('Error processing refund:', error);
+      const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+      setNotification({
+        message: apiErrorMessage || 'No se pudo procesar la devolucion.',
+        isError: true
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsProcessingRefund(false);
+      setRefundData(null);
     }
   };
 
@@ -544,7 +594,7 @@ export const Sales = () => {
       {/* Catalog Section */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800">Catálogo</h2>
+          <h2 className="text-lg font-semibold text-gray-800">Catalogo</h2>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -599,7 +649,7 @@ export const Sales = () => {
           ))}
           {filteredCatalog.length === 0 && (
             <div className="col-span-full rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
-              No hay productos en caché para esta sucursal. Sincroniza catálogo para habilitar ventas offline.
+              No hay productos en cache para esta sucursal. Sincroniza catalogo para habilitar ventas offline.
             </div>
           )}
         </div>
@@ -614,7 +664,7 @@ export const Sales = () => {
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">Historial de Ventas (Sesión)</h3>
+              <h3 className="text-sm font-semibold text-gray-700">Historial de Ventas (Sesion)</h3>
               {isLoadingHistory && <span className="text-xs text-blue-600">Actualizando...</span>}
             </div>
             {sessionSalesHistory.length > 0 ? (
@@ -633,7 +683,13 @@ export const Sales = () => {
                       <tr key={sale.id} className="border-b border-gray-100 text-gray-700">
                         <td className="py-1.5 font-medium">{sale.id.slice(0, 8)}</td>
                         <td className="py-1.5">{new Date(sale.createdAt).toLocaleTimeString()}</td>
-                        <td className="py-1.5 text-right font-semibold">{formatMoney(sale.total)}</td>
+                        <td className="py-1.5 text-right font-semibold">
+                          {(sale.isRefunded || refundedSales.has(sale.id)) ? (
+                            <span className="line-through text-red-600">{formatMoney(sale.total)}</span>
+                          ) : (
+                            formatMoney(sale.total)
+                          )}
+                        </td>
                         <td className="py-1.5 text-center">
                           <button
                             type="button"
@@ -644,6 +700,21 @@ export const Sales = () => {
                           >
                             <Printer size={14} />
                           </button>
+                          {(sale.isRefunded || refundedSales.has(sale.id)) ? (
+                            <span className="ml-2 inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-red-700 bg-red-100">
+                              Devuelto
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              title="Devolver venta"
+                              disabled={isProcessingRefund}
+                              onClick={() => setRefundData({ saleId: sale.id, showModal: true })}
+                              className="ml-2 inline-flex items-center justify-center rounded-md border border-red-200 bg-red-50 p-1.5 text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -651,13 +722,13 @@ export const Sales = () => {
                 </table>
               </div>
             ) : (
-              <p className="text-xs text-gray-500">No hay ventas registradas en esta sesión.</p>
+              <p className="text-xs text-gray-500">No hay ventas registradas en esta sesion.</p>
             )}
           </div>
 
           {cart.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-              El carrito está vacío
+              El carrito esta vacio
             </div>
           ) : cart.map(item => (
             <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
@@ -681,6 +752,12 @@ export const Sales = () => {
         <div className="p-4 border-t border-gray-100 bg-gray-50 space-y-4">
           <div className="space-y-1 text-sm">
             <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>{formatMoney(subTotal)}</span></div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-orange-600 font-medium">
+                <span>Descuento</span>
+                <span>-{formatMoney(discountAmount)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-gray-500"><span>IVA ({taxPercentage.toFixed(2)}%)</span><span>{formatMoney(tax)}</span></div>
             <div className="flex justify-between text-lg font-bold text-gray-900 border-t border-gray-200 pt-2 mt-2">
               <span>Total</span><span>{formatMoney(total)}</span>
@@ -688,6 +765,12 @@ export const Sales = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
+             <button
+                onClick={() => setShowDiscountModal(true)}
+                className="py-2 px-3 rounded-lg text-sm font-medium bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 transition-all"
+              >
+               Aplicar Descuento
+             </button>
              <button 
                 onClick={() => setPaymentMethod(0)}
                 className={`py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all ${paymentMethod === 0 ? 'bg-blue-100 text-blue-700 border-2 border-blue-500' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}
@@ -744,6 +827,107 @@ export const Sales = () => {
           onClose={() => setIsCloseModalOpen(false)}
           onSubmit={handleCloseSession}
         />
+      )}
+
+      {showDiscountModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-xl font-bold mb-4 text-gray-900">Aplicar Descuento</h3>
+
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDiscountType('fixed')}
+                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all ${
+                    discountType === 'fixed'
+                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Monto Fijo
+                </button>
+                <button
+                  onClick={() => setDiscountType('percentage')}
+                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all ${
+                    discountType === 'percentage'
+                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Porcentaje
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {discountType === 'percentage' ? 'Porcentaje (%)' : `Monto (${currencySymbol})`}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={discountType === 'percentage' ? 100 : subTotal}
+                  value={discount}
+                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={discountType === 'percentage' ? '10' : '5000'}
+                />
+              </div>
+
+              {discountAmount > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                  <p className="text-gray-600">Descuento a aplicar: <strong>{formatMoney(discountAmount)}</strong></p>
+                  <p className="text-gray-600">Total despues de descuento: <strong>{formatMoney(subTotalAfterDiscount)}</strong></p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowDiscountModal(false);
+                  setDiscount(0);
+                  setDiscountType('fixed');
+                }}
+                className="flex-1 py-2 px-3 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => setShowDiscountModal(false)}
+                className="flex-1 py-2 px-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-all"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refundData && refundData.showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-xl font-bold mb-4 text-gray-900">Confirmar Devolucion</h3>
+            <p className="text-gray-600 mb-6">Deseas procesar la devolucion del ticket <strong>{refundData.saleId.slice(0, 8)}</strong>?</p>
+            <p className="text-sm text-gray-500 mb-6">Se restaurara el inventario y se registrara la salida de dinero en la caja actual.</p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRefundData(null)}
+                disabled={isProcessingRefund}
+                className="flex-1 py-2 px-3 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleRefundSale}
+                disabled={isProcessingRefund}
+                className="flex-1 py-2 px-3 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-all disabled:opacity-50"
+              >
+                {isProcessingRefund ? 'Procesando...' : 'Devolver'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {ticketToPrint && (

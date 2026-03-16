@@ -58,6 +58,21 @@ public static class DbInitializer
                 ADD COLUMN IF NOT EXISTS ""CurrencySymbol"" text NOT NULL DEFAULT '$';
             ");
 
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Sales""
+                ADD COLUMN IF NOT EXISTS ""Discount"" numeric NOT NULL DEFAULT 0;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Sales""
+                ADD COLUMN IF NOT EXISTS ""IsRefunded"" boolean NOT NULL DEFAULT false;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""SaleDetails""
+                ADD COLUMN IF NOT EXISTS ""DiscountAmount"" numeric NOT NULL DEFAULT 0;
+            ");
+
             logger.LogInformation("[Seed] Migrations applied.");
 
             // ── 2. Seed Core entities once ──────────────────────────────────

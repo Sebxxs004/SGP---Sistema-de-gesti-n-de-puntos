@@ -115,6 +115,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             request.SubTotal,
             request.Tax,
             request.Total,
+            request.Discount,
             request.CreatedAt
         );
 
@@ -126,7 +127,8 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
                 sale.Id,
                 detailDto.ProductId,
                 detailDto.Quantity,
-                detailDto.UnitPrice
+                detailDto.UnitPrice,
+                detailDto.DiscountAmount
             ));
         }
 
@@ -142,8 +144,9 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         }
 
         var subTotalCalculated = sale.Details.Sum(d => d.SubTotal);
-        var taxCalculated = Math.Round(subTotalCalculated * (tenantConfig.TaxPercentage / 100m), 2, MidpointRounding.AwayFromZero);
-        var totalCalculated = subTotalCalculated + taxCalculated;
+        var subTotalAfterDiscount = Math.Max(subTotalCalculated - request.Discount, 0m);
+        var taxCalculated = Math.Round(subTotalAfterDiscount * (tenantConfig.TaxPercentage / 100m), 2, MidpointRounding.AwayFromZero);
+        var totalCalculated = subTotalAfterDiscount + taxCalculated;
 
         sale.UpdateTotals(subTotalCalculated, taxCalculated, totalCalculated);
 
