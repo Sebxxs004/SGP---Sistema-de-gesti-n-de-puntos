@@ -26,7 +26,7 @@ export const Sales = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   
-  const { tenantId } = useAuthStore();
+  const { tenantId, currentBranchId } = useAuthStore();
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
 
   const filteredCatalog = CATALOG.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -59,12 +59,17 @@ export const Sales = () => {
 
   const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
+    if (!currentBranchId) {
+      setNotification({ message: 'Selecciona una sucursal activa antes de vender.', isError: true });
+      return;
+    }
+
     setIsProcessing(true);
     setNotification(null);
 
     // Frontend generates the ID to ensure idempotency across offline/online
     const saleId = crypto.randomUUID();
-    const branchId = '11111111-1111-1111-1111-111111111111'; // Mocked Branch
+    const branchId = currentBranchId;
     const sessionId = '22222222-2222-2222-2222-222222222222'; // Mocked Session
 
     const details: OfflineSaleDetail[] = cart.map(item => ({

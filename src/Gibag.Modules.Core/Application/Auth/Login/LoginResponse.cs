@@ -6,6 +6,7 @@ public sealed record LoginResponse(
     string Token,
     Guid UserId,
     string Email,
+    string Role,
     Guid? DefaultBranchId,
     IReadOnlyList<LoginBranchDto> Branches
 );

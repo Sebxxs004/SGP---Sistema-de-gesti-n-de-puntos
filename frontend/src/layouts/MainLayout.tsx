@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
 
 export const MainLayout = () => {
-  const { user, logout } = useAuthStore();
+  const { user, branches, currentBranchId, setCurrentBranchId, logout } = useAuthStore();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
@@ -71,6 +71,21 @@ export const MainLayout = () => {
           </button>
           
           <div className="ml-auto flex items-center gap-4">
+            {user?.role === 'Admin' && branches.length > 1 && (
+              <select
+                value={currentBranchId ?? ''}
+                onChange={(e) => setCurrentBranchId(e.target.value)}
+                className="hidden rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-blue-500 lg:block"
+                aria-label="Sucursal activa"
+              >
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
             {isSyncing && (
               <span className="text-xs font-medium text-blue-600 animate-pulse bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 hidden sm:inline-block">
                 Sincronizando ventas...

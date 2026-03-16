@@ -63,6 +63,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginRes
             token,
             user.Id,
             user.Email,
+            user.Role?.Name ?? string.Empty,
             defaultBranchId,
             branches
         );

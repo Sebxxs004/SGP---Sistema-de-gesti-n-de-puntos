@@ -15,7 +15,7 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     // We read directly from the Zustand store's state
-    const { token, tenantId, branchId } = useAuthStore.getState();
+    const { token, tenantId, currentBranchId } = useAuthStore.getState();
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -25,8 +25,8 @@ apiClient.interceptors.request.use(
       config.headers['X-Tenant-Id'] = tenantId;
     }
 
-    if (branchId) {
-      config.headers['X-Branch-Id'] = branchId;
+    if (currentBranchId) {
+      config.headers['X-Branch-Id'] = currentBranchId;
     }
 
     return config;

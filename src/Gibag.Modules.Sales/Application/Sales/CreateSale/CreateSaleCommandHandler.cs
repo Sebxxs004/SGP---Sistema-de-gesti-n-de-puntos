@@ -56,6 +56,11 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             return Result<Guid>.Failure("Sales.SessionInvalid", "La caja especificada no existe o está cerrada.");
         }
 
+        if (session.BranchId != request.BranchId)
+        {
+            return Result<Guid>.Failure("Sales.BranchMismatch", "La sesión de caja no pertenece a la sucursal activa.");
+        }
+
         // Verify and reserve stock via Inventory Integration
         foreach (var detail in request.Details)
         {

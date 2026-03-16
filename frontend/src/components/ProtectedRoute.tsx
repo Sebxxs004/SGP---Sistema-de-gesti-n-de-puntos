@@ -6,7 +6,7 @@ export const ProtectedRoute = () => {
   const location = useLocation();
   const token = useAuthStore((state) => state.token);
   const tenantId = useAuthStore((state) => state.tenantId);
-  const branchId = useAuthStore((state) => state.branchId);
+  const currentBranchId = useAuthStore((state) => state.currentBranchId);
 
   // Consider authenticated if we have both Token and TenantId
   if (!token || !tenantId) {
@@ -14,7 +14,7 @@ export const ProtectedRoute = () => {
   }
 
   // Force branch selection before entering module pages.
-  if (!branchId && location.pathname !== '/select-branch') {
+  if (!currentBranchId && location.pathname !== '/select-branch') {
     return <Navigate to="/select-branch" replace />;
   }
 

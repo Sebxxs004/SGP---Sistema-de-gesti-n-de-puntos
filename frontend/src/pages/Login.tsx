@@ -14,6 +14,7 @@ interface LoginResponseData {
   token: string;
   userId: string;
   email: string;
+  role: string;
   defaultBranchId: string | null;
   branches: LoginBranch[];
 }
@@ -49,9 +50,10 @@ export const Login = () => {
       const payload = (response.data as LoginApiResponse).data;
 
       const token = payload.token;
-      const user = { id: payload.userId, email: payload.email };
+      const user = { id: payload.userId, email: payload.email, role: payload.role };
       const branches = payload.branches;
-      const defaultBranchId = payload.defaultBranchId;
+      const shouldAutoSelect = branches.length === 1;
+      const defaultBranchId = shouldAutoSelect ? branches[0].id : null;
       
       // Save globally
       setCredentials(token, tenantId, user, branches, defaultBranchId);

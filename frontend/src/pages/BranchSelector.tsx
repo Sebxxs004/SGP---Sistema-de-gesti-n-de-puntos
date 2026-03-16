@@ -2,25 +2,25 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { Store } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 
-export const BranchSelector = () => {
+export const BranchSelectorView = () => {
   const navigate = useNavigate();
 
   const token = useAuthStore((state) => state.token);
   const tenantId = useAuthStore((state) => state.tenantId);
-  const branchId = useAuthStore((state) => state.branchId);
+  const currentBranchId = useAuthStore((state) => state.currentBranchId);
   const branches = useAuthStore((state) => state.branches);
-  const setBranchId = useAuthStore((state) => state.setBranchId);
+  const setCurrentBranchId = useAuthStore((state) => state.setCurrentBranchId);
 
   if (!token || !tenantId) {
     return <Navigate to="/login" replace />;
   }
 
-  if (branchId) {
+  if (currentBranchId) {
     return <Navigate to="/" replace />;
   }
 
   const handleSelectBranch = (selectedBranchId: string) => {
-    setBranchId(selectedBranchId);
+    setCurrentBranchId(selectedBranchId);
     navigate('/');
   };
 
@@ -62,3 +62,5 @@ export const BranchSelector = () => {
     </div>
   );
 };
+
+export const BranchSelector = BranchSelectorView;

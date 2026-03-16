@@ -24,5 +24,7 @@ public class InventoryDbContextFactory : IDesignTimeDbContextFactory<InventoryDb
 internal sealed class DesignTimeTenantService : ITenantService
 {
     public Guid? CurrentTenantId => Guid.Empty;
+    public Guid? CurrentBranchId => Guid.Empty;
     public void SetCurrentTenantId(Guid tenantId) { }
+    public void SetCurrentBranchId(Guid branchId) { }
 }

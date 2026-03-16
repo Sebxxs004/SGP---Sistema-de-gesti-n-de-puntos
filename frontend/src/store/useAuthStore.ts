@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface User {
   id: string;
   email: string;
+  role: string;
 }
 
 export interface BranchSummary {
@@ -15,6 +16,8 @@ export interface BranchSummary {
 interface AuthState {
   token: string | null;
   tenantId: string | null;
+  currentBranchId: string | null;
+  // Compatibility alias for existing consumers; mirrors currentBranchId.
   branchId: string | null;
   branches: BranchSummary[];
   user: User | null;
@@ -23,9 +26,10 @@ interface AuthState {
     tenantId: string,
     user: User,
     branches: BranchSummary[],
-    branchId?: string | null
+    currentBranchId?: string | null
   ) => void;
   setTenantId: (tenantId: string) => void;
+  setCurrentBranchId: (branchId: string) => void;
   setBranchId: (branchId: string) => void;
   logout: () => void;
 }
@@ -35,18 +39,21 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       tenantId: null,
+      currentBranchId: null,
       branchId: null,
       branches: [],
       user: null,
 
-      setCredentials: (token, tenantId, user, branches, branchId = null) =>
-        set({ token, tenantId, user, branches, branchId }),
+      setCredentials: (token, tenantId, user, branches, currentBranchId = null) =>
+        set({ token, tenantId, user, branches, currentBranchId, branchId: currentBranchId }),
       
       setTenantId: (tenantId) => set({ tenantId }),
 
-      setBranchId: (branchId) => set({ branchId }),
+      setCurrentBranchId: (currentBranchId) => set({ currentBranchId, branchId: currentBranchId }),
 
-      logout: () => set({ token: null, tenantId: null, branchId: null, branches: [], user: null }),
+      setBranchId: (branchId) => set({ currentBranchId: branchId, branchId }),
+
+      logout: () => set({ token: null, tenantId: null, currentBranchId: null, branchId: null, branches: [], user: null }),
     }),
     {
       name: 'auth-storage', // name of the item in the storage (must be unique)
