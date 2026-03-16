@@ -79,6 +79,7 @@ export const Sales = () => {
 
     setIsProcessing(true);
     setNotification(null);
+    let shouldClearCart = false;
 
     // Frontend generates the ID to ensure idempotency across offline/online
     const saleId = crypto.randomUUID();
@@ -113,28 +114,43 @@ export const Sales = () => {
     };
 
     try {
+      // Try API first when online
       if (isOnline) {
-        // Try API first
         await apiClient.post('/sales', salePayload);
         setNotification({ message: 'Venta procesada exitosamente.', isError: false });
+        shouldClearCart = true;
       } else {
-        throw new Error("Offline"); // Force catch to save locally
-      }
-    } catch (error: any) {
-      // If offline or API fails, save to IndexedDB
-      console.warn("Venta offline, guardando en local db...");
-      
-      try {
         await db.sales.add(salePayload);
         setNotification({ message: 'Sin conexión. Venta guardada localmente.', isError: false });
-      } catch (dbError) {
-        console.error("Error guardando en Dexie", dbError);
-        setNotification({ message: 'Error fatal guardando la venta.', isError: true });
-        return;
+        shouldClearCart = true;
+      }
+    } catch (error: unknown) {
+      const axiosError = error as {
+        code?: string;
+        response?: { data?: { error?: { message?: string } } };
+      };
+
+      const apiErrorMessage = axiosError.response?.data?.error?.message;
+      const isNetworkFailure = !axiosError.response || axiosError.code === 'ERR_NETWORK';
+
+      // Only fallback to local persistence for real connectivity failures.
+      if (!isOnline || isNetworkFailure) {
+        try {
+          await db.sales.add(salePayload);
+          setNotification({ message: 'Sin conexión o API no disponible. Venta guardada localmente.', isError: false });
+          shouldClearCart = true;
+        } catch (dbError) {
+          console.error('Error guardando en Dexie', dbError);
+          setNotification({ message: 'No se pudo procesar ni guardar localmente la venta.', isError: true });
+        }
+      } else {
+        setNotification({ message: apiErrorMessage ?? 'No fue posible procesar la venta.', isError: true });
       }
     } finally {
       setIsProcessing(false);
-      setCart([]); // Clear cart
+      if (shouldClearCart) {
+        setCart([]);
+      }
       setTimeout(() => setNotification(null), 4000);
     }
   };
