@@ -9,6 +9,7 @@ import { Inventory } from './pages/Inventory';
 import { Sales } from './pages/Sales';
 import { CashOpening } from './pages/CashOpening';
 import { Users } from './pages/Users';
+import { Settings } from './pages/Settings';
 
 // Create a client
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ function App() {
               <Route path="/pos" element={<Sales />} />
               <Route path="/sales" element={<Navigate to="/pos" replace />} />
               <Route path="/users" element={<Users />} />
+              <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>
         </Routes>

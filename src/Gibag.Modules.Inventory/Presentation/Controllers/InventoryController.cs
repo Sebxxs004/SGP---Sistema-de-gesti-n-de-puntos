@@ -1,4 +1,5 @@
 using Gibag.Modules.Inventory.Application.Products.CreateProduct;
+using Gibag.Modules.Inventory.Application.Stock.AdjustStock;
 using Gibag.Modules.Inventory.Infrastructure;
 using Gibag.Shared.Interfaces;
 using MediatR;
@@ -23,6 +24,62 @@ public class InventoryController : ControllerBase
         _sender = sender;
         _currentUser = currentUser;
         _dbContext = dbContext;
+    }
+
+    [HttpGet("stock")]
+    public async Task<IActionResult> GetBranchStock(CancellationToken cancellationToken)
+    {
+        if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar inventario." }
+            });
+        }
+
+        var branchId = _currentUser.BranchId.Value;
+
+        var products = await _dbContext.Products
+            .AsNoTracking()
+            .Where(p => p.IsActive && p.Category != null && p.Category.IsActive)
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.SKU,
+                p.BasePrice,
+                Category = p.Category!.Name
+            })
+            .ToListAsync(cancellationToken);
+
+        var stocks = await _dbContext.BranchStocks
+            .AsNoTracking()
+            .Where(bs => bs.BranchId == branchId)
+            .ToDictionaryAsync(bs => bs.ProductId, bs => bs.Quantity, cancellationToken);
+
+        var data = products
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                sku = p.SKU,
+                category = p.Category,
+                price = p.BasePrice,
+                stock = stocks.TryGetValue(p.Id, out var quantity) ? quantity : 0m
+            })
+            .OrderBy(p => p.Name)
+            .ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                branchId,
+                products = data
+            }
+        });
     }
 
     [HttpGet("catalog/sync")]
@@ -119,6 +176,49 @@ public class InventoryController : ControllerBase
             data = new { id = result.Value } 
         });
     }
+
+    [HttpPost("stock/adjust")]
+    public async Task<IActionResult> AdjustStock([FromBody] AdjustStockRequest request)
+    {
+        if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para ajustar inventario." }
+            });
+        }
+
+        var branchId = request.BranchId == Guid.Empty ? _currentUser.BranchId.Value : request.BranchId;
+
+        var result = await _sender.Send(new AdjustStockCommand(
+            branchId,
+            request.ProductId,
+            request.QuantityDelta,
+            request.Reason));
+
+        if (result.IsFailure)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = result.ErrorCode, message = result.ErrorMessage }
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                movementId = result.Value,
+                branchId,
+                request.ProductId,
+                request.QuantityDelta,
+                request.Reason
+            }
+        });
+    }
 }
 
 public sealed record CatalogCategorySyncDto(Guid Id, string Name);
@@ -130,4 +230,11 @@ public sealed record CatalogProductSyncDto(
     decimal Price,
     Guid CategoryId,
     string CategoryName
+);
+
+public sealed record AdjustStockRequest(
+    Guid BranchId,
+    Guid ProductId,
+    decimal QuantityDelta,
+    string Reason
 );

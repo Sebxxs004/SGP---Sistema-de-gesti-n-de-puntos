@@ -99,7 +99,8 @@ public class SalesController : ControllerBase
             {
                 t.Id,
                 t.Name,
-                t.TaxId
+                t.TaxId,
+                t.ThankYouMessage
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -110,7 +111,8 @@ public class SalesController : ControllerBase
             {
                 b.Id,
                 b.Name,
-                b.Address
+                b.Address,
+                b.Phone
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -126,13 +128,15 @@ public class SalesController : ControllerBase
                 {
                     id = tenant?.Id ?? saleData.TenantId,
                     name = tenant?.Name ?? "SGP",
-                    taxId = tenant?.TaxId ?? "N/A"
+                    taxId = tenant?.TaxId ?? "N/A",
+                    thankYouMessage = tenant?.ThankYouMessage ?? "Gracias por su compra"
                 },
                 branch = new
                 {
                     id = branch?.Id ?? saleData.BranchId,
                     name = branch?.Name ?? "Sucursal",
-                    address = branch?.Address ?? ""
+                    address = branch?.Address ?? "",
+                    phone = branch?.Phone ?? ""
                 },
                 cashier = new
                 {

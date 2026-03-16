@@ -156,11 +156,13 @@ export const Sales = () => {
         id: tenantId ?? 'N/A',
         name: 'SGP',
         taxId: 'N/A',
+        thankYouMessage: 'Gracias por su compra',
       },
       branch: {
         id: currentBranchId ?? 'N/A',
         name: currentBranchName,
         address: '',
+        phone: '',
       },
       cashier: {
         id: user?.id ?? 'N/A',

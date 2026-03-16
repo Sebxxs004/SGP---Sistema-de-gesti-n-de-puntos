@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Gibag.Shared")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f1bfc7c8bfb8d0ed4a6345d85476fea980e1c5ed")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e14e285a36162a12936081fa825ca359b7feac68")]
 [assembly: System.Reflection.AssemblyProductAttribute("Gibag.Shared")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Gibag.Shared")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -5,6 +5,7 @@ using Gibag.Modules.Core.Application.Interfaces;
 using Gibag.Modules.Core.Infrastructure;
 using Gibag.Modules.Core.Infrastructure.Auth;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,7 +17,9 @@ public static class DependencyInjection
     {
         // Infrastructure
         services.AddDbContext<CoreDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options
+                .UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
         services.AddScoped<IJwtProvider, JwtProvider>();
 

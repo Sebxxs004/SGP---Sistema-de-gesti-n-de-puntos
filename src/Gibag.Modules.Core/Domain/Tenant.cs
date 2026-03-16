@@ -6,6 +6,7 @@ public class Tenant : EntityBase
 {
     public string Name { get; private set; }
     public string TaxId { get; private set; }
+    public string? ThankYouMessage { get; private set; }
     public bool IsActive { get; private set; }
     public string SubscriptionPlan { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -19,6 +20,7 @@ public class Tenant : EntityBase
     {
         Name = string.Empty;
         TaxId = string.Empty;
+        ThankYouMessage = null;
         SubscriptionPlan = string.Empty;
         Branches = new List<Branch>();
         Roles = new List<Role>();
@@ -30,11 +32,17 @@ public class Tenant : EntityBase
         Id = Guid.NewGuid();
         Name = name;
         TaxId = taxId;
+        ThankYouMessage = "Gracias por su compra";
         IsActive = true;
         SubscriptionPlan = subscriptionPlan;
         CreatedAt = DateTimeOffset.UtcNow;
         Branches = new List<Branch>();
         Roles = new List<Role>();
         Users = new List<User>();
+    }
+
+    public void UpdateThankYouMessage(string? message)
+    {
+        ThankYouMessage = string.IsNullOrWhiteSpace(message) ? null : message.Trim();
     }
 }

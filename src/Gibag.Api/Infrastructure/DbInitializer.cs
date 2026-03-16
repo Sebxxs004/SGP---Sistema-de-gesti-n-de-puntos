@@ -37,6 +37,17 @@ public static class DbInitializer
             var salesDb = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
             await salesDb.Database.MigrateAsync();
 
+            // Ensure optional columns introduced in later phases exist in databases
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Branches""
+                ADD COLUMN IF NOT EXISTS ""Phone"" text NULL;
+            ");
+
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Tenants""
+                ADD COLUMN IF NOT EXISTS ""ThankYouMessage"" text NULL;
+            ");
+
             logger.LogInformation("[Seed] Migrations applied.");
 
             // ── 2. Seed Core entities once ──────────────────────────────────
@@ -46,12 +57,13 @@ public static class DbInitializer
             {
                 // ── 3. Tenant ────────────────────────────────────────────────
                 var tenant = new Tenant("SGP Demo", "000-000-0000-0", "Free");
+                tenant.UpdateThankYouMessage("Gracias por preferirnos");
                 // Override the auto-generated Id with the fixed seed Id via EF property
                 coreDb.Entry(tenant).Property("Id").CurrentValue = SeedTenantId;
                 await coreDb.Tenants.AddAsync(tenant);
 
                 // ── 4. Branch ────────────────────────────────────────────────
-                var branch = new Branch(SeedTenantId, "Sucursal Central", "Av. Principal 123", "America/Bogota");
+                var branch = new Branch(SeedTenantId, "Sucursal Central", "Av. Principal 123", "America/Bogota", "+57 300 000 0000");
                 coreDb.Entry(branch).Property("Id").CurrentValue = SeedBranchId;
                 await coreDb.Branches.AddAsync(branch);
 
@@ -77,6 +89,22 @@ public static class DbInitializer
             else
             {
                 logger.LogInformation("[Seed] Core entities already present.");
+
+                var existingTenant = await coreDb.Tenants.FirstOrDefaultAsync(t => t.Id == SeedTenantId);
+                if (existingTenant != null && string.IsNullOrWhiteSpace(existingTenant.ThankYouMessage))
+                {
+                    existingTenant.UpdateThankYouMessage("Gracias por preferirnos");
+                    await coreDb.SaveChangesAsync();
+                }
+
+                var existingBranch = await coreDb.Branches
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(b => b.Id == SeedBranchId);
+                if (existingBranch != null && string.IsNullOrWhiteSpace(existingBranch.Phone))
+                {
+                    existingBranch.Update(existingBranch.Name, existingBranch.Address, existingBranch.Timezone, "+57 300 000 0000");
+                    await coreDb.SaveChangesAsync();
+                }
             }
 
             // ── 8. Inventory Categories + Products + BranchStock (idempotent) ──

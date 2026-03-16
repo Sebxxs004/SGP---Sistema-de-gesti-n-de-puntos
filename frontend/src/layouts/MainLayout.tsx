@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
-import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
 import { useCatalogSync } from '../hooks/useCatalogSync';
@@ -19,6 +19,7 @@ export const MainLayout = () => {
     { name: 'Inventario', href: '/inventory', icon: Package },
     { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
     { name: 'Usuarios', href: '/users', icon: Users },
+    { name: 'Configuracion', href: '/settings', icon: Settings },
   ];
 
   return (

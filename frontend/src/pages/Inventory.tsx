@@ -1,22 +1,100 @@
-import { useState } from 'react';
-import { PackageSearch, Boxes, AlertCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PackageSearch, Boxes, AlertCircle, Plus, X } from 'lucide-react';
+import apiClient from '../api/apiClient';
+import { useAuthStore } from '../store/useAuthStore';
+
+type InventoryProduct = {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  price: number;
+  stock: number;
+};
+
+type InventoryStockResponse = {
+  success: boolean;
+  data: {
+    branchId: string;
+    products: InventoryProduct[];
+  };
+};
+
+type AdjustStockPayload = {
+  branchId: string;
+  productId: string;
+  quantityDelta: number;
+  reason: string;
+};
+
+type AdjustModalState = {
+  productId: string;
+  productName: string;
+  quantityDelta: number;
+  reason: string;
+};
 
 export const Inventory = () => {
-  // In a real scenario, this would be fetched via React Query using apiClient
-  // Since Phase 4 only requested "CreateProductCommand", we mock the list view for testing the UI
-  const [products] = useState([
-    { id: '1', sku: 'PRD-001', name: 'Café de Especialidad 500g', stock: 45, price: 12.50, category: 'Cafetería' },
-    { id: '2', sku: 'PRD-002', name: 'Taza SGP Pro', stock: 12, price: 8.90, category: 'Merch' },
-    { id: '3', sku: 'PRD-003', name: 'Leche de Almendras 1L', stock: 4, price: 3.20, category: 'Cafetería' },
-    { id: '4', sku: 'PRD-004', name: 'Galletas de Avena', stock: 0, price: 2.10, category: 'Pastelería' },
-  ]);
-
+  const queryClient = useQueryClient();
+  const currentBranchId = useAuthStore((state) => state.currentBranchId);
   const [searchTerm, setSearchTerm] = useState('');
+  const [notification, setNotification] = useState<{ text: string; isError: boolean } | null>(null);
+  const [adjustModal, setAdjustModal] = useState<AdjustModalState | null>(null);
+
+  const stockQuery = useQuery({
+    queryKey: ['inventory-stock', currentBranchId],
+    queryFn: async () => {
+      const response = await apiClient.get<InventoryStockResponse>('/inventory/stock');
+      return response.data.data.products;
+    },
+    enabled: !!currentBranchId,
+  });
+
+  const adjustStockMutation = useMutation({
+    mutationFn: async (payload: AdjustStockPayload) => {
+      await apiClient.post('/inventory/stock/adjust', payload);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory-stock', currentBranchId] });
+      setNotification({ text: 'Ajuste de inventario aplicado.', isError: false });
+      setAdjustModal(null);
+    },
+    onError: () => {
+      setNotification({ text: 'No se pudo aplicar el ajuste de inventario.', isError: true });
+    },
+  });
+
+  const products = useMemo(() => stockQuery.data ?? [], [stockQuery.data]);
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const openAdjustModal = (product: InventoryProduct) => {
+    setAdjustModal({
+      productId: product.id,
+      productName: product.name,
+      quantityDelta: 1,
+      reason: 'Error de conteo',
+    });
+  };
+
+  const submitAdjustStock = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!adjustModal || !currentBranchId) {
+      return;
+    }
+
+    await adjustStockMutation.mutateAsync({
+      branchId: currentBranchId,
+      productId: adjustModal.productId,
+      quantityDelta: adjustModal.quantityDelta,
+      reason: adjustModal.reason,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -40,6 +118,12 @@ export const Inventory = () => {
         </div>
       </div>
 
+      {notification && (
+        <div className={`rounded-lg px-4 py-3 text-sm ${notification.isError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+          {notification.text}
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-600">
@@ -51,10 +135,19 @@ export const Inventory = () => {
                 <th scope="col" className="px-6 py-4 font-semibold text-right">Precio</th>
                 <th scope="col" className="px-6 py-4 font-semibold text-right">Stock</th>
                 <th scope="col" className="px-6 py-4 font-semibold text-center">Estado</th>
+                <th scope="col" className="px-6 py-4 font-semibold text-center">Accion</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredProducts.map((product) => (
+              {stockQuery.isLoading && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    Cargando inventario de la sucursal...
+                  </td>
+                </tr>
+              )}
+
+              {!stockQuery.isLoading && filteredProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium text-gray-900">{product.name}</td>
                   <td className="px-6 py-4">{product.sku}</td>
@@ -82,11 +175,21 @@ export const Inventory = () => {
                       </span>
                     )}
                   </td>
+                  <td className="px-6 py-4 text-center">
+                    <button
+                      type="button"
+                      className="inline-flex items-center rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
+                      title="Ajustar stock"
+                      onClick={() => openAdjustModal(product)}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     No se encontraron productos coincidentes.
                   </td>
                 </tr>
@@ -95,6 +198,61 @@ export const Inventory = () => {
           </table>
         </div>
       </div>
+
+      {adjustModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Ajuste Rapido de Stock</h2>
+                <p className="text-sm text-gray-500">Producto: {adjustModal.productName}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
+                onClick={() => setAdjustModal(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form className="space-y-4" onSubmit={submitAdjustStock}>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Cantidad (+/-)</label>
+                <input
+                  type="number"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  value={adjustModal.quantityDelta}
+                  onChange={(e) => setAdjustModal((prev) => prev ? { ...prev, quantityDelta: Number(e.target.value) } : prev)}
+                  step="1"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Motivo</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  value={adjustModal.reason}
+                  onChange={(e) => setAdjustModal((prev) => prev ? { ...prev, reason: e.target.value } : prev)}
+                >
+                  <option value="Merma">Merma</option>
+                  <option value="Error de conteo">Error de conteo</option>
+                  <option value="Ingreso por compra">Ingreso por compra</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={adjustStockMutation.isPending}
+                className="w-full rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {adjustStockMutation.isPending ? 'Aplicando...' : 'Aplicar ajuste'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

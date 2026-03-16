@@ -19,11 +19,13 @@ export interface TicketData {
     id: string;
     name: string;
     taxId: string;
+    thankYouMessage?: string;
   };
   branch: {
     id: string;
     name: string;
     address: string;
+    phone?: string;
   };
   cashier: {
     id: string;
@@ -53,6 +55,7 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
         <p className="text-[10px]">NIT: {ticket.company.taxId || 'N/A'}</p>
         <p className="text-[10px]">Sucursal: {ticket.branch.name}</p>
         {ticket.branch.address && <p className="text-[10px]">{ticket.branch.address}</p>}
+        {ticket.branch.phone && <p className="text-[10px]">Tel: {ticket.branch.phone}</p>}
       </header>
 
       <section className="border-b border-dashed border-black py-2 text-[10px]">
@@ -105,7 +108,7 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
       </section>
 
       <footer className="pt-2 text-center text-[10px]">
-        <p>Gracias por su compra</p>
+        <p>{ticket.company.thankYouMessage || 'Gracias por su compra'}</p>
         <p>Sistema SGP</p>
       </footer>
     </article>
