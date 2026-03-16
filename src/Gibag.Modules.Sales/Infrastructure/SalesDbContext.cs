@@ -16,6 +16,7 @@ public class SalesDbContext : DbContext
     }
 
     public DbSet<CashRegisterSession> CashRegisterSessions { get; set; } = null!;
+    public DbSet<CashMovement> CashMovements { get; set; } = null!;
     public DbSet<Sale> Sales { get; set; } = null!;
     public DbSet<SaleDetail> SaleDetails { get; set; } = null!;
     public DbSet<Payment> Payments { get; set; } = null!;
@@ -26,6 +27,7 @@ public class SalesDbContext : DbContext
 
         // Global Query Filter for Multi-Tenancy
         modelBuilder.Entity<CashRegisterSession>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
+        modelBuilder.Entity<CashMovement>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<Sale>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<SaleDetail>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
@@ -36,6 +38,9 @@ public class SalesDbContext : DbContext
             
         modelBuilder.Entity<CashRegisterSession>()
             .HasIndex(crs => new { crs.TenantId, crs.BranchId });
+
+        modelBuilder.Entity<CashMovement>()
+            .HasIndex(cm => new { cm.TenantId, cm.SessionId, cm.CreatedAt });
     }
 
     public override int SaveChanges()

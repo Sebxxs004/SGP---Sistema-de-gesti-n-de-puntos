@@ -5,6 +5,7 @@ export interface OfflineSaleDetail {
   productId: string;
   quantity: number;
   unitPrice: number;
+  discountAmount?: number;
 }
 
 export interface OfflinePayment {
@@ -25,7 +26,9 @@ export interface OfflineSale {
   createdAt: string; // ISO String
   details: OfflineSaleDetail[];
   payments: OfflinePayment[];
+  status: 'Pending' | 'Completed' | 'Refunded';
   isSynced: boolean; // Flag to trace if synced
+  syncAction?: 'create' | 'complete';
   isSyncBlocked?: boolean; // Prevent endless retries for permanent 4xx errors
   syncError?: string; // If syncing failed
 }
@@ -113,6 +116,25 @@ db.version(4)
     categories: 'cacheKey, id, branchId, name',
     products: 'cacheKey, id, branchId, categoryId, sku, name, price',
     syncMeta: 'key, updatedAt'
+  });
+
+db.version(5)
+  .stores({
+    sales: 'id, tenantId, sessionId, branchId, status, isSynced, isSyncBlocked, createdAt',
+    categories: 'cacheKey, id, branchId, name',
+    products: 'cacheKey, id, branchId, categoryId, sku, name, price',
+    syncMeta: 'key, updatedAt'
+  })
+  .upgrade(async tx => {
+    await tx.table('sales').toCollection().modify((sale: Partial<OfflineSale>) => {
+      if (!sale.status) {
+        sale.status = 'Completed';
+      }
+
+      if (!sale.syncAction && sale.isSynced === false) {
+        sale.syncAction = 'create';
+      }
+    });
   });
 
 export { db };

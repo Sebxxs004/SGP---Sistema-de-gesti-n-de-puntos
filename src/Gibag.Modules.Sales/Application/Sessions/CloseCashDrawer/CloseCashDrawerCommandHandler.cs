@@ -1,4 +1,5 @@
 using Gibag.Modules.Sales.Infrastructure;
+using Gibag.Modules.Sales.Domain;
 using Gibag.Shared.Interfaces;
 using Gibag.Shared.Models;
 using MediatR;
@@ -37,11 +38,23 @@ public class CloseCashDrawerCommandHandler : IRequestHandler<CloseCashDrawerComm
             return Result<CloseCashDrawerResultDto>.Failure("Sales.NoActiveSession", "No existe una sesión activa para cerrar en esta sucursal.");
         }
 
-        var salesTotal = await _dbContext.Sales
-            .Where(s => s.SessionId == session.Id)
-            .SumAsync(s => (decimal?)(s.IsRefunded ? 0m : s.Total), cancellationToken) ?? 0m;
+        var cashSalesTotal = await _dbContext.Payments
+            .Where(p => p.Sale != null && p.Sale.SessionId == session.Id && p.Method == PaymentMethod.Cash && p.Amount > 0m)
+            .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
 
-        var finalExpected = session.InitialBalance + salesTotal;
+        var cashRefundsTotal = await _dbContext.Payments
+            .Where(p => p.Sale != null && p.Sale.SessionId == session.Id && p.Method == PaymentMethod.Cash && p.Amount < 0m)
+            .SumAsync(p => (decimal?)-p.Amount, cancellationToken) ?? 0m;
+
+        var manualCashInTotal = await _dbContext.CashMovements
+            .Where(m => m.SessionId == session.Id && m.Type == CashMovementType.CashIn)
+            .SumAsync(m => (decimal?)m.Amount, cancellationToken) ?? 0m;
+
+        var manualCashOutTotal = await _dbContext.CashMovements
+            .Where(m => m.SessionId == session.Id && m.Type == CashMovementType.CashOut)
+            .SumAsync(m => (decimal?)m.Amount, cancellationToken) ?? 0m;
+
+        var finalExpected = session.InitialBalance + cashSalesTotal - cashRefundsTotal + manualCashInTotal - manualCashOutTotal;
         session.Close(request.FinalBalanceEncounted, finalExpected);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -49,7 +62,10 @@ public class CloseCashDrawerCommandHandler : IRequestHandler<CloseCashDrawerComm
         var result = new CloseCashDrawerResultDto(
             session.Id,
             session.InitialBalance,
-            salesTotal,
+            cashSalesTotal,
+            cashRefundsTotal,
+            manualCashInTotal,
+            manualCashOutTotal,
             finalExpected,
             request.FinalBalanceEncounted,
             request.FinalBalanceEncounted - finalExpected

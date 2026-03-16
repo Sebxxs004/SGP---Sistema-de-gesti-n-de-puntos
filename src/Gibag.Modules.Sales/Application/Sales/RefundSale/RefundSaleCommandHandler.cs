@@ -47,6 +47,9 @@ public class RefundSaleCommandHandler : IRequestHandler<RefundSaleCommand, Resul
         if (sale == null)
             return Result<Guid>.Failure("Sales.NotFound", "La venta no existe o no pertenece a tu sucursal.");
 
+        if (sale.Status != SaleStatus.Completed)
+            return Result<Guid>.Failure("Sales.InvalidStatus", "Solo se pueden devolver ventas completadas.");
+
         if (sale.IsRefunded)
             return Result<Guid>.Failure("Sales.AlreadyRefunded", "Esta venta ya ha sido reembolsada.");
 

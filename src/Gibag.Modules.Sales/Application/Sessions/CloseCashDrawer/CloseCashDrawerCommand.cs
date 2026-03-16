@@ -11,7 +11,10 @@ public record CloseCashDrawerCommand(
 public record CloseCashDrawerResultDto(
     Guid SessionId,
     decimal InitialBalance,
-    decimal SalesTotal,
+    decimal CashSalesTotal,
+    decimal CashRefundsTotal,
+    decimal ManualCashInTotal,
+    decimal ManualCashOutTotal,
     decimal FinalBalanceExpected,
     decimal FinalBalanceEncounted,
     decimal Difference

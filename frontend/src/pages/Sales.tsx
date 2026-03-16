@@ -3,7 +3,7 @@ import { db } from '../db/db';
 import type { OfflineSale, OfflineSaleDetail, OfflinePayment } from '../db/db';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
-import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw, Printer } from 'lucide-react';
+import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw, Printer, PauseCircle, Clock3, Play } from 'lucide-react';
 import { CloseCashierModal } from '../components/CloseCashierModal';
 import { isAxiosError } from 'axios';
 import { getCatalogLastSyncAt, getCatalogProducts, syncCatalog } from '../services/CatalogSyncService';
@@ -21,13 +21,39 @@ interface SessionSaleHistoryItem {
   tax: number;
   total: number;
   isRefunded: boolean;
+  status: string;
   items: number;
   payments: Array<{ method: string; amount: number }>;
 }
 
+type SaleWorkflowStatus = 'Pending' | 'Completed' | 'Refunded';
+
 interface RefundData {
   saleId: string;
   showModal: boolean;
+}
+
+interface CashMovementModalData {
+  type: 'CashIn' | 'CashOut';
+  amount: string;
+  reason: string;
+}
+
+interface PendingSaleTicket {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  branchId: string;
+  subTotal: number;
+  tax: number;
+  total: number;
+  discount: number;
+  createdAt: string;
+  details: OfflineSaleDetail[];
+  payments: OfflinePayment[];
+  status: SaleWorkflowStatus;
+  isSynced: boolean;
+  syncAction?: 'create' | 'complete';
 }
 
 interface SessionSalesHistoryResponse {
@@ -58,6 +84,51 @@ interface CashSessionsHistoryResponse {
   data: CashSessionHistoryItem[];
 }
 
+interface CloseSummaryData {
+  initialBalance: number;
+  cashSalesTotal: number;
+  cashRefundsTotal: number;
+  manualCashInTotal: number;
+  manualCashOutTotal: number;
+  finalBalanceExpected: number;
+  finalBalanceEncounted: number;
+  difference: number;
+}
+
+interface CloseSummaryPreviewResponse {
+  success: boolean;
+  data: {
+    sessionId: string;
+    initialBalance: number;
+    cashSalesTotal: number;
+    cashRefundsTotal: number;
+    manualCashInTotal: number;
+    manualCashOutTotal: number;
+    finalBalanceExpected: number;
+  };
+}
+
+interface PendingSaleApiResponse {
+  success: boolean;
+  data: Array<{
+    id: string;
+    sessionId: string;
+    branchId: string;
+    createdAt: string;
+    subTotal: number;
+    discount: number;
+    tax: number;
+    total: number;
+    details: Array<{
+      id: string;
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+      discountAmount?: number;
+    }>;
+  }>;
+}
+
 interface CartItem {
   id: string; // ProductId
   name: string;
@@ -84,18 +155,21 @@ export const Sales = () => {
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
-  const [closeSummary, setCloseSummary] = useState<{
-    salesTotal: number;
-    finalBalanceExpected: number;
-    finalBalanceEncounted: number;
-    difference: number;
-  } | null>(null);
+  const [isOpeningCloseModal, setIsOpeningCloseModal] = useState(false);
+  const [closeSummaryPreview, setCloseSummaryPreview] = useState<Omit<CloseSummaryData, 'finalBalanceEncounted' | 'difference'> | null>(null);
+  const [closeSummary, setCloseSummary] = useState<CloseSummaryData | null>(null);
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('fixed');
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [refundData, setRefundData] = useState<RefundData | null>(null);
   const [isProcessingRefund, setIsProcessingRefund] = useState(false);
   const [refundedSales, setRefundedSales] = useState<Set<string>>(new Set());
+  const [cashMovementModal, setCashMovementModal] = useState<CashMovementModalData | null>(null);
+  const [isSubmittingCashMovement, setIsSubmittingCashMovement] = useState(false);
+  const [pendingSales, setPendingSales] = useState<PendingSaleTicket[]>([]);
+  const [isLoadingPendingSales, setIsLoadingPendingSales] = useState(false);
+  const [isPendingDrawerOpen, setIsPendingDrawerOpen] = useState(false);
+  const [activeHeldSaleId, setActiveHeldSaleId] = useState<string | null>(null);
   
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
   const companySettingsQuery = useCompanySettings();
@@ -155,6 +229,67 @@ export const Sales = () => {
   const total = subTotalAfterDiscount + tax;
 
   const formatMoney = (value: number) => formatCurrency(value, currencySymbol);
+
+  const buildSaleDetails = (): OfflineSaleDetail[] => cart.map(item => ({
+    id: crypto.randomUUID(),
+    productId: item.id,
+    quantity: item.quantity,
+    unitPrice: item.price,
+    discountAmount: 0,
+  }));
+
+  const buildSalePayload = (
+    saleId: string,
+    status: SaleWorkflowStatus,
+    details: OfflineSaleDetail[],
+    payments: OfflinePayment[],
+    createdAt = new Date().toISOString(),
+  ): OfflineSale => ({
+    id: saleId,
+    tenantId: tenantId || '',
+    sessionId: currentSessionId || '',
+    branchId: currentBranchId || '',
+    subTotal,
+    tax,
+    total,
+    discount: discountAmount,
+    createdAt,
+    details,
+    payments,
+    status,
+    isSynced: false,
+    syncAction: 'create',
+  });
+
+  const toPendingTicket = (sale: OfflineSale): PendingSaleTicket => ({
+    id: sale.id,
+    tenantId: sale.tenantId,
+    sessionId: sale.sessionId,
+    branchId: sale.branchId,
+    subTotal: sale.subTotal,
+    tax: sale.tax,
+    total: sale.total,
+    discount: sale.discount,
+    createdAt: sale.createdAt,
+    details: sale.details,
+    payments: sale.payments,
+    status: sale.status,
+    isSynced: sale.isSynced,
+    syncAction: sale.syncAction,
+  });
+
+  const getCartFromPendingSale = (sale: PendingSaleTicket): CartItem[] => {
+    const productsById = new Map(catalog.map(product => [product.id, product]));
+    return sale.details.map((detail) => {
+      const product = productsById.get(detail.productId);
+      return {
+        id: detail.productId,
+        name: product?.name ?? `Producto ${detail.productId.slice(0, 8)}`,
+        price: detail.unitPrice,
+        quantity: detail.quantity,
+      };
+    });
+  };
 
   const buildLocalTicketData = (
     saleId: string,
@@ -284,6 +419,61 @@ export const Sales = () => {
     }
   };
 
+  const refreshPendingSales = async () => {
+    if (!currentSessionId || !currentBranchId) {
+      setPendingSales([]);
+      return;
+    }
+
+    setIsLoadingPendingSales(true);
+    try {
+      if (isOnline) {
+        const response = await apiClient.get<PendingSaleApiResponse>('/sales/pending');
+        const localSalesById = new Map((await db.sales.toArray()).map((sale) => [sale.id, sale]));
+
+        for (const sale of response.data.data) {
+          const localSale = localSalesById.get(sale.id);
+          if (localSale && !localSale.isSynced) {
+            continue;
+          }
+
+          await db.sales.put({
+            id: sale.id,
+            tenantId: tenantId || '',
+            sessionId: sale.sessionId,
+            branchId: sale.branchId,
+            subTotal: sale.subTotal,
+            tax: sale.tax,
+            total: sale.total,
+            discount: sale.discount,
+            createdAt: sale.createdAt,
+            details: sale.details,
+            payments: [],
+            status: 'Pending',
+            isSynced: true,
+            syncAction: undefined,
+            isSyncBlocked: false,
+            syncError: undefined,
+          });
+        }
+      }
+
+      const localPendingSales = await db.sales
+        .where('sessionId')
+        .equals(currentSessionId)
+        .filter((sale) => sale.branchId === currentBranchId && sale.status === 'Pending')
+        .sortBy('createdAt');
+
+      setPendingSales(localPendingSales.reverse().map(toPendingTicket));
+    } catch (error) {
+      console.error('Error loading pending sales:', error);
+      setNotification({ message: 'No se pudieron cargar las ventas en espera.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsLoadingPendingSales(false);
+    }
+  };
+
   const handleManualCatalogSync = async () => {
     if (!currentBranchId) {
       setNotification({ message: 'Selecciona una sucursal activa para sincronizar catalogo.', isError: true });
@@ -320,6 +510,18 @@ export const Sales = () => {
     };
   }, [currentSessionId]);
 
+  useEffect(() => {
+    refreshPendingSales();
+
+    const intervalId = window.setInterval(() => {
+      refreshPendingSales();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentSessionId, currentBranchId, isOnline, tenantId, catalog.length]);
+
   const refreshCashSessionsHistory = async () => {
     setIsLoadingCashHistory(true);
     try {
@@ -355,17 +557,9 @@ export const Sales = () => {
     setNotification(null);
     let shouldClearCart = false;
 
-    // Frontend generates the ID to ensure idempotency across offline/online
-    const saleId = crypto.randomUUID();
-    const branchId = currentBranchId;
-    const sessionId = currentSessionId;
-
-    const details: OfflineSaleDetail[] = cart.map(item => ({
-      id: crypto.randomUUID(),
-      productId: item.id,
-      quantity: item.quantity,
-      unitPrice: item.price
-    }));
+    const saleId = activeHeldSaleId ?? crypto.randomUUID();
+    const details = buildSaleDetails();
+    const existingHeldSale = activeHeldSaleId ? await db.sales.get(activeHeldSaleId) : undefined;
 
     const payments: OfflinePayment[] = [{
       id: crypto.randomUUID(),
@@ -373,25 +567,21 @@ export const Sales = () => {
       method: paymentMethod
     }];
 
-    const salePayload: OfflineSale = {
-      id: saleId,
-      tenantId: tenantId || '',
-      sessionId,
-      branchId,
-      subTotal,
-      tax,
-      total,
-      discount: discountAmount,
-      createdAt: new Date().toISOString(),
-      details,
-      payments,
-      isSynced: false
-    };
+    const salePayload = buildSalePayload(saleId, 'Completed', details, payments, existingHeldSale?.createdAt);
 
     try {
-      // Try API first when online
       if (isOnline) {
-        const response = await apiClient.post<{ success: boolean; data?: { id?: string } }>('/sales', salePayload);
+        const response = activeHeldSaleId && existingHeldSale?.isSynced
+          ? await apiClient.post<{ success: boolean; data?: { id?: string } }>(`/sales/${saleId}/complete`, {
+              discount: discountAmount,
+              details,
+              payments,
+            })
+          : await apiClient.post<{ success: boolean; data?: { id?: string } }>('/sales', {
+              ...salePayload,
+              status: 'Completed',
+            });
+
         const registeredSaleId = response.data?.data?.id ?? saleId;
 
         try {
@@ -401,10 +591,20 @@ export const Sales = () => {
           setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, discountAmount, tax, total));
         }
 
+        if (activeHeldSaleId) {
+          await db.sales.delete(activeHeldSaleId);
+        }
+
         setNotification({ message: 'Venta procesada exitosamente.', isError: false });
         shouldClearCart = true;
       } else {
-        await db.sales.add(salePayload);
+        await db.sales.put({
+          ...salePayload,
+          isSynced: false,
+          syncAction: existingHeldSale?.isSynced ? 'complete' : 'create',
+          isSyncBlocked: false,
+          syncError: undefined,
+        });
         setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, discountAmount, tax, total));
         setNotification({ message: 'Sin conexion. Venta guardada localmente.', isError: false });
         shouldClearCart = true;
@@ -420,7 +620,13 @@ export const Sales = () => {
       // Only fallback to local persistence for real connectivity failures.
       if (isNetworkFailure) {
         try {
-          await db.sales.add(salePayload);
+          await db.sales.put({
+            ...salePayload,
+            isSynced: false,
+            syncAction: existingHeldSale?.isSynced ? 'complete' : 'create',
+            isSyncBlocked: false,
+            syncError: undefined,
+          });
           setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, discountAmount, tax, total));
           setNotification({ message: 'Sin conexion o API no disponible. Venta guardada localmente.', isError: false });
           shouldClearCart = true;
@@ -437,12 +643,103 @@ export const Sales = () => {
         setCart([]);
         setDiscount(0);
         setDiscountType('fixed');
+        setActiveHeldSaleId(null);
       }
       if (shouldClearCart) {
         refreshSessionHistory();
+        refreshPendingSales();
       }
       setTimeout(() => setNotification(null), 4000);
     }
+  };
+
+  const handlePutSaleOnHold = async () => {
+    if (cart.length === 0) {
+      return;
+    }
+
+    if (!currentBranchId || !currentSessionId) {
+      setNotification({ message: 'Necesitas una sesion activa para poner ventas en espera.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    setIsProcessing(true);
+    setNotification(null);
+
+    const saleId = activeHeldSaleId ?? crypto.randomUUID();
+    const details = buildSaleDetails();
+    const salePayload = buildSalePayload(saleId, 'Pending', details, [], activeHeldSaleId ? pendingSales.find((sale) => sale.id === activeHeldSaleId)?.createdAt : undefined);
+
+    try {
+      if (isOnline) {
+        await apiClient.post('/sales', {
+          ...salePayload,
+          status: 'Pending',
+        });
+
+        await db.sales.put({
+          ...salePayload,
+          isSynced: true,
+          syncAction: undefined,
+          isSyncBlocked: false,
+          syncError: undefined,
+        });
+      } else {
+        await db.sales.put({
+          ...salePayload,
+          isSynced: false,
+          syncAction: 'create',
+          isSyncBlocked: false,
+          syncError: undefined,
+        });
+      }
+
+      setCart([]);
+      setDiscount(0);
+      setDiscountType('fixed');
+      setActiveHeldSaleId(null);
+      setNotification({ message: 'Venta enviada a espera.', isError: false });
+      await refreshPendingSales();
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error: unknown) {
+      const isNetworkFailure =
+        !navigator.onLine ||
+        (isAxiosError(error) && (!error.response && (error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED')));
+
+      if (isNetworkFailure) {
+        await db.sales.put({
+          ...salePayload,
+          isSynced: false,
+          syncAction: 'create',
+          isSyncBlocked: false,
+          syncError: undefined,
+        });
+        setCart([]);
+        setDiscount(0);
+        setDiscountType('fixed');
+        setActiveHeldSaleId(null);
+        setNotification({ message: 'Sin conexion. Ticket guardado en espera local.', isError: false });
+        await refreshPendingSales();
+        setTimeout(() => setNotification(null), 4000);
+      } else {
+        const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+        setNotification({ message: apiErrorMessage ?? 'No fue posible poner la venta en espera.', isError: true });
+        setTimeout(() => setNotification(null), 4000);
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleResumePendingSale = (sale: PendingSaleTicket) => {
+    setCart(getCartFromPendingSale(sale));
+    setDiscount(sale.discount);
+    setDiscountType('fixed');
+    setActiveHeldSaleId(sale.id);
+    setIsPendingDrawerOpen(false);
+    setNotification({ message: `Ticket ${sale.id.slice(0, 8)} cargado en el carrito.`, isError: false });
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const handleCloseSession = async (finalBalanceEncounted: number) => {
@@ -455,14 +752,7 @@ export const Sales = () => {
         finalBalanceEncounted,
       });
 
-      const payload = (response.data as {
-        data?: {
-          salesTotal: number;
-          finalBalanceExpected: number;
-          finalBalanceEncounted: number;
-          difference: number;
-        };
-      }).data;
+      const payload = (response.data as { data?: CloseSummaryData }).data;
 
       if (payload) {
         setCloseSummary(payload);
@@ -480,6 +770,70 @@ export const Sales = () => {
       setNotification({ message: message ?? 'No fue posible cerrar la caja.', isError: true });
     } finally {
       setIsClosingSession(false);
+    }
+  };
+
+  const handleOpenCloseModal = async () => {
+    if (!currentSessionId) {
+      setNotification({ message: 'No tienes una sesion activa para cerrar.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    setIsOpeningCloseModal(true);
+    try {
+      const response = await apiClient.get<CloseSummaryPreviewResponse>('/sales/sessions/current/close-summary');
+      setCloseSummaryPreview(response.data.data);
+      setIsCloseModalOpen(true);
+    } catch (error) {
+      console.error('Error loading close summary:', error);
+      const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+      setNotification({ message: apiErrorMessage ?? 'No fue posible cargar el resumen de cierre.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsOpeningCloseModal(false);
+    }
+  };
+
+  const handleRegisterCashMovement = async () => {
+    if (!cashMovementModal) return;
+
+    const amount = Number.parseFloat(cashMovementModal.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setNotification({ message: 'El monto debe ser mayor a cero.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    if (!cashMovementModal.reason.trim()) {
+      setNotification({ message: 'Debes ingresar un motivo para el movimiento.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    setIsSubmittingCashMovement(true);
+    try {
+      await apiClient.post('/sales/sessions/current/movements', {
+        type: cashMovementModal.type,
+        amount,
+        reason: cashMovementModal.reason.trim(),
+      });
+
+      setNotification({
+        message: cashMovementModal.type === 'CashIn'
+          ? 'Entrada de efectivo registrada.'
+          : 'Salida de efectivo registrada.',
+        isError: false,
+      });
+      setCashMovementModal(null);
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      console.error('Error registering cash movement:', error);
+      const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+      setNotification({ message: apiErrorMessage ?? 'No fue posible registrar el movimiento.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsSubmittingCashMovement(false);
     }
   };
 
@@ -598,10 +952,43 @@ export const Sales = () => {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsCloseModalOpen(true)}
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+              onClick={() => setIsPendingDrawerOpen(true)}
+              disabled={!currentSessionId}
+              className="relative rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Cerrar Turno
+              <span className="inline-flex items-center gap-1.5">
+                <Clock3 size={13} />
+                En Espera
+              </span>
+              {pendingSales.length > 0 && (
+                <span className="absolute -right-2 -top-2 inline-flex min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {pendingSales.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCashMovementModal({ type: 'CashIn', amount: '', reason: '' })}
+              disabled={!currentSessionId || isSubmittingCashMovement}
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Entrada de Efectivo
+            </button>
+            <button
+              type="button"
+              onClick={() => setCashMovementModal({ type: 'CashOut', amount: '', reason: '' })}
+              disabled={!currentSessionId || isSubmittingCashMovement}
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Salida de Efectivo
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenCloseModal}
+              disabled={!currentSessionId || isOpeningCloseModal}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isOpeningCloseModal ? 'Cargando...' : 'Cerrar Turno'}
             </button>
             <button
               type="button"
@@ -659,6 +1046,11 @@ export const Sales = () => {
       <div className="w-full lg:w-96 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-800">Ticket de Venta</h2>
+          {activeHeldSaleId && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Editando ticket en espera <span className="font-semibold">{activeHeldSaleId.slice(0, 8)}</span>
+            </div>
+          )}
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -794,8 +1186,12 @@ export const Sales = () => {
           {closeSummary && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
               <p className="font-semibold">Resumen de Arqueo</p>
-              <p>Ventas totales: {formatMoney(closeSummary.salesTotal)}</p>
-              <p>Esperado: {formatMoney(closeSummary.finalBalanceExpected)}</p>
+              <p>Fondo inicial: {formatMoney(closeSummary.initialBalance)}</p>
+              <p>(+) Ventas en efectivo: {formatMoney(closeSummary.cashSalesTotal)}</p>
+              <p>(-) Devoluciones: {formatMoney(closeSummary.cashRefundsTotal)}</p>
+              <p>(+) Entradas manuales: {formatMoney(closeSummary.manualCashInTotal)}</p>
+              <p>(-) Salidas manuales: {formatMoney(closeSummary.manualCashOutTotal)}</p>
+              <p className="font-semibold">= Esperado: {formatMoney(closeSummary.finalBalanceExpected)}</p>
               <p>Contado: {formatMoney(closeSummary.finalBalanceEncounted)}</p>
               <p>Diferencia: {formatMoney(closeSummary.difference)}</p>
             </div>
@@ -806,7 +1202,19 @@ export const Sales = () => {
             onClick={handleFinalizeSale}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
           >
-            {isProcessing ? 'Procesando...' : 'Finalizar Venta'}
+            {isProcessing ? 'Procesando...' : activeHeldSaleId ? 'Cobrar Venta en Espera' : 'Finalizar Venta'}
+          </button>
+
+          <button
+            type="button"
+            disabled={cart.length === 0 || isProcessing}
+            onClick={handlePutSaleOnHold}
+            className="w-full rounded-xl border border-slate-300 bg-white py-2.5 font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="inline-flex items-center gap-2">
+              <PauseCircle size={16} />
+              Poner en Espera
+            </span>
           </button>
 
           {lastTicketData && (
@@ -824,9 +1232,142 @@ export const Sales = () => {
       {isCloseModalOpen && (
         <CloseCashierModal
           isLoading={isClosingSession}
+          currencySymbol={currencySymbol}
+          breakdown={closeSummaryPreview ?? {
+            initialBalance: 0,
+            cashSalesTotal: 0,
+            cashRefundsTotal: 0,
+            manualCashInTotal: 0,
+            manualCashOutTotal: 0,
+            finalBalanceExpected: 0,
+          }}
           onClose={() => setIsCloseModalOpen(false)}
           onSubmit={handleCloseSession}
         />
+      )}
+
+      {isPendingDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex bg-black/30">
+          <div className="flex-1" onClick={() => setIsPendingDrawerOpen(false)} />
+          <div className="h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl">
+            <div className="sticky top-0 border-b border-gray-200 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Tickets en Espera</h3>
+                  <p className="text-sm text-gray-500">Retoma un carrito pendiente o verifica cuántos clientes están estacionados.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPendingDrawerOpen(false)}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {isLoadingPendingSales && (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
+                  Cargando tickets en espera...
+                </div>
+              )}
+
+              {!isLoadingPendingSales && pendingSales.length === 0 && (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
+                  No hay tickets en espera para esta sesion.
+                </div>
+              )}
+
+              {!isLoadingPendingSales && pendingSales.map((sale) => (
+                <div key={sale.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Ticket {sale.id.slice(0, 8)}</p>
+                      <p className="text-xs text-gray-500">{new Date(sale.createdAt).toLocaleString('es-CO')}</p>
+                    </div>
+                    <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${sale.isSynced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {sale.isSynced ? 'Sincronizado' : 'Local'}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-1 text-sm text-gray-600">
+                    <p>Productos: {sale.details.reduce((sum, detail) => sum + detail.quantity, 0)}</p>
+                    <p>Subtotal: {formatMoney(sale.subTotal)}</p>
+                    <p>Descuento: {formatMoney(sale.discount)}</p>
+                    <p className="font-semibold text-gray-900">Total: {formatMoney(sale.total)}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleResumePendingSale(sale)}
+                    className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Play size={14} />
+                      Retomar
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cashMovementModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {cashMovementModal.type === 'CashIn' ? 'Entrada de Efectivo' : 'Salida de Efectivo'}
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">Registra un movimiento manual que no corresponde a venta ni devolución.</p>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Monto</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={cashMovementModal.amount}
+                  onChange={(e) => setCashMovementModal((prev) => prev ? { ...prev, amount: e.target.value } : prev)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Motivo</label>
+                <textarea
+                  value={cashMovementModal.reason}
+                  onChange={(e) => setCashMovementModal((prev) => prev ? { ...prev, reason: e.target.value } : prev)}
+                  className="h-24 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  maxLength={200}
+                  placeholder={cashMovementModal.type === 'CashIn' ? 'Ej. Cambio para la caja' : 'Ej. Pago proveedor de agua'}
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setCashMovementModal(null)}
+                disabled={isSubmittingCashMovement}
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleRegisterCashMovement}
+                disabled={isSubmittingCashMovement}
+                className={`flex-1 rounded-lg px-4 py-2 font-medium text-white disabled:opacity-60 ${cashMovementModal.type === 'CashIn' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+              >
+                {isSubmittingCashMovement ? 'Guardando...' : 'Registrar Movimiento'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showDiscountModal && (

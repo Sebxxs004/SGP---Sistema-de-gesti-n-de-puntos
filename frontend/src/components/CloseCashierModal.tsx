@@ -2,11 +2,24 @@ import { useState } from 'react';
 
 interface CloseCashierModalProps {
   isLoading: boolean;
+  currencySymbol: string;
+  breakdown: {
+    initialBalance: number;
+    cashSalesTotal: number;
+    cashRefundsTotal: number;
+    manualCashInTotal: number;
+    manualCashOutTotal: number;
+    finalBalanceExpected: number;
+  };
   onClose: () => void;
   onSubmit: (finalBalanceEncounted: number) => Promise<void>;
 }
 
-export const CloseCashierModal = ({ isLoading, onClose, onSubmit }: CloseCashierModalProps) => {
+const formatMoney = (value: number, currencySymbol: string) => {
+  return `${currencySymbol}${value.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+export const CloseCashierModal = ({ isLoading, currencySymbol, breakdown, onClose, onSubmit }: CloseCashierModalProps) => {
   const [finalBalanceEncounted, setFinalBalanceEncounted] = useState('0');
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -24,6 +37,36 @@ export const CloseCashierModal = ({ isLoading, onClose, onSubmit }: CloseCashier
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         <h3 className="text-lg font-semibold text-gray-900">Cerrar Turno</h3>
         <p className="mt-1 text-sm text-gray-500">Ingresa el monto final contado en caja.</p>
+
+        <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+          <p className="font-semibold">Resumen esperado</p>
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center justify-between">
+              <span>Fondo inicial</span>
+              <span>{formatMoney(breakdown.initialBalance, currencySymbol)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>(+) Ventas en efectivo</span>
+              <span>{formatMoney(breakdown.cashSalesTotal, currencySymbol)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>(-) Devoluciones</span>
+              <span>{formatMoney(breakdown.cashRefundsTotal, currencySymbol)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>(+) Entradas manuales</span>
+              <span>{formatMoney(breakdown.manualCashInTotal, currencySymbol)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>(-) Salidas manuales</span>
+              <span>{formatMoney(breakdown.manualCashOutTotal, currencySymbol)}</span>
+            </div>
+            <div className="mt-2 border-t border-blue-200 pt-2 flex items-center justify-between font-semibold">
+              <span>= Total esperado en caja</span>
+              <span>{formatMoney(breakdown.finalBalanceExpected, currencySymbol)}</span>
+            </div>
+          </div>
+        </div>
 
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
           <div>

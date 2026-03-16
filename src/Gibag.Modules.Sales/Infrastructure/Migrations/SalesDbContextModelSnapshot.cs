@@ -22,6 +22,40 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Gibag.Modules.Sales.Domain.CashMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("TenantId", "SessionId", "CreatedAt");
+
+                    b.ToTable("CashMovements", (string)null);
+                });
+
             modelBuilder.Entity("Gibag.Modules.Sales.Domain.CashRegisterSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -59,7 +93,7 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
 
                     b.HasIndex("TenantId", "BranchId");
 
-                    b.ToTable("CashRegisterSessions");
+                    b.ToTable("CashRegisterSessions", (string)null);
                 });
 
             modelBuilder.Entity("Gibag.Modules.Sales.Domain.Payment", b =>
@@ -84,7 +118,7 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
 
                     b.HasIndex("SaleId");
 
-                    b.ToTable("Payments");
+                    b.ToTable("Payments", (string)null);
                 });
 
             modelBuilder.Entity("Gibag.Modules.Sales.Domain.Sale", b =>
@@ -108,6 +142,9 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
                     b.Property<Guid>("SessionId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("SubTotal")
                         .HasColumnType("numeric");
 
@@ -129,7 +166,7 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
 
                     b.HasIndex("TenantId", "SessionId");
 
-                    b.ToTable("Sales");
+                    b.ToTable("Sales", (string)null);
                 });
 
             modelBuilder.Entity("Gibag.Modules.Sales.Domain.SaleDetail", b =>
@@ -163,7 +200,18 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
 
                     b.HasIndex("SaleId");
 
-                    b.ToTable("SaleDetails");
+                    b.ToTable("SaleDetails", (string)null);
+                });
+
+            modelBuilder.Entity("Gibag.Modules.Sales.Domain.CashMovement", b =>
+                {
+                    b.HasOne("Gibag.Modules.Sales.Domain.CashRegisterSession", "Session")
+                        .WithMany("CashMovements")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
                 });
 
             modelBuilder.Entity("Gibag.Modules.Sales.Domain.Payment", b =>
@@ -201,6 +249,8 @@ namespace Gibag.Modules.Sales.Infrastructure.Migrations
 
             modelBuilder.Entity("Gibag.Modules.Sales.Domain.CashRegisterSession", b =>
                 {
+                    b.Navigation("CashMovements");
+
                     b.Navigation("Sales");
                 });
 

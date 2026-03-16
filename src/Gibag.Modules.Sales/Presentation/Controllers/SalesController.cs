@@ -1,7 +1,9 @@
 using Gibag.Modules.Sales.Application.Sales.CreateSale;
+using Gibag.Modules.Sales.Application.Sales.CompletePendingSale;
 using Gibag.Modules.Sales.Application.Sales.RefundSale;
 using Gibag.Modules.Sales.Application.Sessions.CloseCashDrawer;
 using Gibag.Modules.Sales.Application.Sessions.OpenCashDrawer;
+using Gibag.Modules.Sales.Application.Sessions.RegisterCashMovement;
 using Gibag.Modules.Sales.Domain;
 using Gibag.Modules.Sales.Infrastructure;
 using Gibag.Modules.Core.Infrastructure;
@@ -192,14 +194,14 @@ public class SalesController : ControllerBase
 
         var salesTodayQuery = _dbContext.Sales
             .AsNoTracking()
-            .Where(s => s.BranchId == branchId && s.CreatedAt >= dayStart && s.CreatedAt < dayEnd);
+            .Where(s => s.BranchId == branchId && s.Status != SaleStatus.Pending && s.CreatedAt >= dayStart && s.CreatedAt < dayEnd);
 
         var totalSalesToday = await salesTodayQuery.SumAsync(s => (decimal?)s.Total, cancellationToken) ?? 0m;
         var ticketsToday = await salesTodayQuery.CountAsync(cancellationToken);
 
         var topProductsRaw = await _dbContext.SaleDetails
             .AsNoTracking()
-            .Where(d => d.Sale != null && d.Sale.BranchId == branchId && d.Sale.CreatedAt >= dayStart && d.Sale.CreatedAt < dayEnd)
+            .Where(d => d.Sale != null && d.Sale.BranchId == branchId && d.Sale.Status != SaleStatus.Pending && d.Sale.CreatedAt >= dayStart && d.Sale.CreatedAt < dayEnd)
             .GroupBy(d => d.ProductId)
             .Select(g => new
             {
@@ -227,7 +229,7 @@ public class SalesController : ControllerBase
 
         var paymentTodayRaw = await _dbContext.Payments
             .AsNoTracking()
-            .Where(p => p.Sale != null && p.Sale.BranchId == branchId && p.Sale.CreatedAt >= dayStart && p.Sale.CreatedAt < dayEnd)
+            .Where(p => p.Sale != null && p.Sale.BranchId == branchId && p.Sale.Status != SaleStatus.Pending && p.Sale.CreatedAt >= dayStart && p.Sale.CreatedAt < dayEnd)
             .GroupBy(p => p.Method)
             .Select(g => new
             {
@@ -251,7 +253,7 @@ public class SalesController : ControllerBase
         var weekStart = dayStart.AddDays(-6);
         var weeklySalesRows = await _dbContext.Sales
             .AsNoTracking()
-            .Where(s => s.BranchId == branchId && s.CreatedAt >= weekStart && s.CreatedAt < dayEnd)
+            .Where(s => s.BranchId == branchId && s.Status != SaleStatus.Pending && s.CreatedAt >= weekStart && s.CreatedAt < dayEnd)
             .Select(s => new { s.CreatedAt, s.Total })
             .ToListAsync(cancellationToken);
 
@@ -344,7 +346,7 @@ public class SalesController : ControllerBase
 
         var sales = await _dbContext.Sales
             .AsNoTracking()
-            .Where(s => s.SessionId == activeSessionId.Value)
+            .Where(s => s.SessionId == activeSessionId.Value && s.Status != SaleStatus.Pending)
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => new
             {
@@ -355,6 +357,7 @@ public class SalesController : ControllerBase
                 tax = s.Tax,
                 total = s.Total,
                 isRefunded = s.IsRefunded,
+                status = s.Status.ToString(),
                 items = s.Details.Sum(d => d.Quantity),
                 payments = s.Payments
                     .Select(p => new
@@ -419,6 +422,77 @@ public class SalesController : ControllerBase
         {
             success = true,
             data = activeSession
+        });
+    }
+
+    [HttpGet("pending")]
+    public async Task<IActionResult> GetPendingSales(CancellationToken cancellationToken)
+    {
+        var currentBranchId = _currentUser.BranchId;
+        var currentUserId = _currentUser.Id;
+
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar ventas en espera." }
+            });
+        }
+
+        if (currentUserId == null || currentUserId == Guid.Empty)
+        {
+            return Unauthorized(new
+            {
+                success = false,
+                error = new { code = "Auth.UserMissing", message = "No se encontró usuario autenticado." }
+            });
+        }
+
+        var activeSessionId = await _dbContext.CashRegisterSessions
+            .AsNoTracking()
+            .Where(s => s.UserId == currentUserId.Value && s.BranchId == currentBranchId.Value && s.IsOpen)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (activeSessionId == null)
+        {
+            return Ok(new
+            {
+                success = true,
+                data = Array.Empty<object>()
+            });
+        }
+
+        var pendingSales = await _dbContext.Sales
+            .AsNoTracking()
+            .Where(s => s.SessionId == activeSessionId.Value && s.Status == SaleStatus.Pending)
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => new
+            {
+                id = s.Id,
+                sessionId = s.SessionId,
+                branchId = s.BranchId,
+                createdAt = s.CreatedAt,
+                subTotal = s.SubTotal,
+                discount = s.Discount,
+                tax = s.Tax,
+                total = s.Total,
+                details = s.Details.Select(d => new
+                {
+                    id = d.Id,
+                    productId = d.ProductId,
+                    quantity = d.Quantity,
+                    unitPrice = d.UnitPrice,
+                    discountAmount = d.DiscountAmount
+                }).ToList()
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = pendingSales
         });
     }
 
@@ -515,6 +589,79 @@ public class SalesController : ControllerBase
         });
     }
 
+    [HttpGet("sessions/current/close-summary")]
+    public async Task<IActionResult> GetCurrentCloseSummary(CancellationToken cancellationToken)
+    {
+        var currentBranchId = _currentUser.BranchId;
+        var currentUserId = _currentUser.Id;
+
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar el resumen de cierre." }
+            });
+        }
+
+        if (currentUserId == null || currentUserId == Guid.Empty)
+        {
+            return Unauthorized(new
+            {
+                success = false,
+                error = new { code = "Auth.UserMissing", message = "No se encontró usuario autenticado." }
+            });
+        }
+
+        var session = await _dbContext.CashRegisterSessions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.UserId == currentUserId.Value && s.BranchId == currentBranchId.Value && s.IsOpen,
+                cancellationToken);
+
+        if (session == null)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Sales.NoActiveSession", message = "No existe una sesión activa para la sucursal actual." }
+            });
+        }
+
+        var cashSalesTotal = await _dbContext.Payments
+            .Where(p => p.Sale != null && p.Sale.SessionId == session.Id && p.Method == PaymentMethod.Cash && p.Amount > 0m)
+            .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+
+        var cashRefundsTotal = await _dbContext.Payments
+            .Where(p => p.Sale != null && p.Sale.SessionId == session.Id && p.Method == PaymentMethod.Cash && p.Amount < 0m)
+            .SumAsync(p => (decimal?)-p.Amount, cancellationToken) ?? 0m;
+
+        var manualCashInTotal = await _dbContext.CashMovements
+            .Where(m => m.SessionId == session.Id && m.Type == CashMovementType.CashIn)
+            .SumAsync(m => (decimal?)m.Amount, cancellationToken) ?? 0m;
+
+        var manualCashOutTotal = await _dbContext.CashMovements
+            .Where(m => m.SessionId == session.Id && m.Type == CashMovementType.CashOut)
+            .SumAsync(m => (decimal?)m.Amount, cancellationToken) ?? 0m;
+
+        var finalBalanceExpected = session.InitialBalance + cashSalesTotal - cashRefundsTotal + manualCashInTotal - manualCashOutTotal;
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                sessionId = session.Id,
+                initialBalance = session.InitialBalance,
+                cashSalesTotal,
+                cashRefundsTotal,
+                manualCashInTotal,
+                manualCashOutTotal,
+                finalBalanceExpected
+            }
+        });
+    }
+
     [HttpPost("sessions/close")]
     public async Task<IActionResult> CloseCashDrawer([FromBody] CloseCashDrawerCommand command)
     {
@@ -546,6 +693,53 @@ public class SalesController : ControllerBase
         });
     }
 
+    [HttpPost("sessions/current/movements")]
+    public async Task<IActionResult> RegisterCashMovement([FromBody] RegisterCashMovementRequest request)
+    {
+        var currentBranchId = _currentUser.BranchId;
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para registrar movimientos de caja." }
+            });
+        }
+
+        if (!Enum.TryParse<CashMovementType>(request.Type, ignoreCase: true, out var movementType))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Sales.InvalidMovementType", message = "El tipo de movimiento debe ser CashIn o CashOut." }
+            });
+        }
+
+        var command = new RegisterCashMovementCommand(
+            currentBranchId.Value,
+            movementType,
+            request.Amount,
+            request.Reason
+        );
+
+        var result = await _sender.Send(command);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = result.ErrorCode, message = result.ErrorMessage }
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            data = new { id = result.Value }
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateSale([FromBody] CreateSaleCommand command)
     {
@@ -573,6 +767,45 @@ public class SalesController : ControllerBase
         return Ok(new { 
             success = true, 
             data = new { id = result.Value } 
+        });
+    }
+
+    [HttpPost("{id:guid}/complete")]
+    public async Task<IActionResult> CompletePendingSale(Guid id, [FromBody] CompletePendingSaleRequest request)
+    {
+        var currentBranchId = _currentUser.BranchId;
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para completar ventas en espera." }
+            });
+        }
+
+        var command = new CompletePendingSaleCommand(
+            id,
+            currentBranchId.Value,
+            request.Discount,
+            request.Details,
+            request.Payments
+        );
+
+        var result = await _sender.Send(command);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = result.ErrorCode, message = result.ErrorMessage }
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            data = new { id = result.Value }
         });
     }
 
@@ -611,3 +844,5 @@ public class SalesController : ControllerBase
 }
 
 public record RefundSaleRequest(string Reason = "Devolución");
+public record RegisterCashMovementRequest(decimal Amount, string Reason, string Type);
+public record CompletePendingSaleRequest(decimal Discount, List<CreateSaleDetailDto> Details, List<CreateSalePaymentDto> Payments);

@@ -15,10 +15,12 @@ public class CashRegisterSession : TenantEntityBase
 
     // Navigation
     public virtual ICollection<Sale> Sales { get; private set; }
+    public virtual ICollection<CashMovement> CashMovements { get; private set; }
 
     private CashRegisterSession() 
     {
         Sales = new List<Sale>();
+        CashMovements = new List<CashMovement>();
     }
 
     public CashRegisterSession(Guid tenantId, Guid branchId, Guid userId, decimal initialAmount) 
@@ -31,6 +33,7 @@ public class CashRegisterSession : TenantEntityBase
         InitialBalance = initialAmount;
         IsOpen = true;
         Sales = new List<Sale>();
+        CashMovements = new List<CashMovement>();
     }
 
     public void Close(decimal finalBalanceEncounted, decimal finalBalanceExpected)

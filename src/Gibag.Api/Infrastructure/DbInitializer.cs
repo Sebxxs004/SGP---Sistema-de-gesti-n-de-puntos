@@ -69,8 +69,38 @@ public static class DbInitializer
             ");
 
             await salesDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Sales""
+                ADD COLUMN IF NOT EXISTS ""Status"" integer NOT NULL DEFAULT 1;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                UPDATE ""Sales""
+                SET ""Status"" = 2
+                WHERE ""IsRefunded"" = true AND ""Status"" <> 2;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""SaleDetails""
                 ADD COLUMN IF NOT EXISTS ""DiscountAmount"" numeric NOT NULL DEFAULT 0;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""CashMovements"" (
+                    ""Id"" uuid NOT NULL,
+                    ""TenantId"" uuid NOT NULL,
+                    ""SessionId"" uuid NOT NULL,
+                    ""Type"" integer NOT NULL,
+                    ""Amount"" numeric NOT NULL,
+                    ""Reason"" text NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    CONSTRAINT ""PK_CashMovements"" PRIMARY KEY (""Id""),
+                    CONSTRAINT ""FK_CashMovements_CashRegisterSessions_SessionId"" FOREIGN KEY (""SessionId"") REFERENCES ""CashRegisterSessions"" (""Id"") ON DELETE CASCADE
+                );
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                CREATE INDEX IF NOT EXISTS ""IX_CashMovements_TenantId_SessionId_CreatedAt""
+                ON ""CashMovements"" (""TenantId"", ""SessionId"", ""CreatedAt"");
             ");
 
             logger.LogInformation("[Seed] Migrations applied.");

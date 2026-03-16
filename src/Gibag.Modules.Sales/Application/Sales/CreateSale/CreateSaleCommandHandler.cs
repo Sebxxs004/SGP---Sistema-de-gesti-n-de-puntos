@@ -33,6 +33,8 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
 
     public async Task<Result<Guid>> Handle(CreateSaleCommand request, CancellationToken cancellationToken)
     {
+        var targetStatus = request.Status ?? SaleStatus.Completed;
+
         var tenantId = _tenantService.CurrentTenantId;
         if (tenantId == null || tenantId == Guid.Empty)
             return Result<Guid>.Failure("Auth.TenantMissing", "No se encontró el inquilino.");
@@ -53,13 +55,18 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         if (tenantConfig == null)
             return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
 
-        // Idempotency Check for offline-sync retries
-        bool saleAlreadyExists = await _dbContext.Sales
-            .AnyAsync(s => s.Id == request.Id, cancellationToken);
-            
-        if (saleAlreadyExists)
+        var existingSale = await _dbContext.Sales
+            .Include(s => s.Details)
+            .Include(s => s.Payments)
+            .FirstOrDefaultAsync(s => s.Id == request.Id, cancellationToken);
+
+        if (existingSale != null)
         {
-            // If the sale is already saved from a previous offline sync, return success immediately
+            if (existingSale.Status == SaleStatus.Pending && targetStatus == SaleStatus.Pending)
+            {
+                return await UpdatePendingSaleAsync(existingSale, request, tenantId.Value, cancellationToken);
+            }
+
             return Result<Guid>.Success(request.Id);
         }
 
@@ -94,7 +101,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
                 request.BranchId, 
                 detail.ProductId, 
                 detail.Quantity, 
-                $"Venta {request.Id}", 
+            targetStatus == SaleStatus.Pending ? $"Venta en espera {request.Id}" : $"Venta {request.Id}", 
                 cancellationToken);
                 
             if (decrementResult.IsFailure)
@@ -116,6 +123,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             request.Tax,
             request.Total,
             request.Discount,
+            targetStatus,
             request.CreatedAt
         );
 
@@ -148,10 +156,153 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         var taxCalculated = Math.Round(subTotalAfterDiscount * (tenantConfig.TaxPercentage / 100m), 2, MidpointRounding.AwayFromZero);
         var totalCalculated = subTotalAfterDiscount + taxCalculated;
 
-        sale.UpdateTotals(subTotalCalculated, taxCalculated, totalCalculated);
+        sale.UpdateFinancials(subTotalCalculated, taxCalculated, totalCalculated, request.Discount);
+
+        if (targetStatus == SaleStatus.Pending)
+        {
+            sale.MarkAsPending();
+        }
+        else
+        {
+            sale.MarkAsCompleted();
+        }
 
         await _dbContext.Sales.AddAsync(sale, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<Guid>.Success(sale.Id);
+    }
+
+    private async Task<Result<Guid>> UpdatePendingSaleAsync(Sale sale, CreateSaleCommand request, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var tenantConfig = await _coreDbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.TaxPercentage })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (tenantConfig == null)
+            return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
+
+        var userId = _currentUser.Id;
+        if (userId == null || userId == Guid.Empty)
+            return Result<Guid>.Failure("Auth.UserMissing", "No se encontró el usuario en sesión para actualizar la venta en espera.");
+
+        var session = await _dbContext.CashRegisterSessions
+            .FirstOrDefaultAsync(s => s.UserId == userId.Value && s.BranchId == request.BranchId && s.IsOpen, cancellationToken);
+
+        if (session == null)
+            return Result<Guid>.Failure("Sales.NoActiveSession", "No existe una sesión de caja activa para el usuario en esta sucursal.");
+
+        if (sale.SessionId != session.Id)
+            return Result<Guid>.Failure("Sales.SessionMismatch", "La venta en espera pertenece a una sesión distinta a la activa.");
+
+        var stockAdjustment = await ReconcileStockAsync(sale, request.Details, request.BranchId, sale.Id, cancellationToken);
+        if (stockAdjustment.IsFailure)
+            return stockAdjustment;
+
+        _dbContext.SaleDetails.RemoveRange(sale.Details.ToList());
+        sale.Details.Clear();
+
+        foreach (var detailDto in request.Details)
+        {
+            sale.AddDetail(new SaleDetail(
+                detailDto.Id,
+                tenantId,
+                sale.Id,
+                detailDto.ProductId,
+                detailDto.Quantity,
+                detailDto.UnitPrice,
+                detailDto.DiscountAmount
+            ));
+        }
+
+        var subTotalCalculated = sale.Details.Sum(d => d.SubTotal);
+        var subTotalAfterDiscount = Math.Max(subTotalCalculated - request.Discount, 0m);
+        var taxCalculated = Math.Round(subTotalAfterDiscount * (tenantConfig.TaxPercentage / 100m), 2, MidpointRounding.AwayFromZero);
+        var totalCalculated = subTotalAfterDiscount + taxCalculated;
+
+        sale.UpdateFinancials(subTotalCalculated, taxCalculated, totalCalculated, request.Discount);
+        sale.MarkAsPending();
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<Guid>.Success(sale.Id);
+    }
+
+    private async Task<Result<Guid>> ReconcileStockAsync(
+        Sale sale,
+        List<CreateSaleDetailDto> requestedDetails,
+        Guid branchId,
+        Guid saleId,
+        CancellationToken cancellationToken)
+    {
+        var existingByProduct = sale.Details
+            .GroupBy(d => d.ProductId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+        var requestedByProduct = requestedDetails
+            .GroupBy(d => d.ProductId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+        foreach (var entry in requestedByProduct)
+        {
+            var previousQuantity = existingByProduct.GetValueOrDefault(entry.Key, 0m);
+            var delta = entry.Value - previousQuantity;
+            if (delta <= 0m)
+                continue;
+
+            var stockCheckResult = await _inventoryService.CheckStockAsync(branchId, entry.Key, delta, cancellationToken);
+            if (stockCheckResult.IsFailure)
+            {
+                return Result<Guid>.Failure(
+                    stockCheckResult.ErrorCode ?? "Sales.StockError",
+                    stockCheckResult.ErrorMessage ?? "Error verificando inventario");
+            }
+        }
+
+        foreach (var entry in requestedByProduct)
+        {
+            var previousQuantity = existingByProduct.GetValueOrDefault(entry.Key, 0m);
+            var delta = entry.Value - previousQuantity;
+            if (delta <= 0m)
+                continue;
+
+            var decrementResult = await _inventoryService.DecrementStockAsync(
+                branchId,
+                entry.Key,
+                delta,
+                $"Venta en espera {saleId}",
+                cancellationToken);
+
+            if (decrementResult.IsFailure)
+            {
+                return Result<Guid>.Failure(
+                    decrementResult.ErrorCode ?? "Sales.StockError",
+                    decrementResult.ErrorMessage ?? "Error actualizando inventario");
+            }
+        }
+
+        foreach (var entry in existingByProduct)
+        {
+            var requestedQuantity = requestedByProduct.GetValueOrDefault(entry.Key, 0m);
+            var delta = entry.Value - requestedQuantity;
+            if (delta <= 0m)
+                continue;
+
+            var incrementResult = await _inventoryService.IncrementStockAsync(
+                branchId,
+                entry.Key,
+                delta,
+                $"Ajuste venta en espera {saleId}",
+                cancellationToken);
+
+            if (incrementResult.IsFailure)
+            {
+                return Result<Guid>.Failure(
+                    incrementResult.ErrorCode ?? "Sales.StockError",
+                    incrementResult.ErrorMessage ?? "Error devolviendo inventario reservado");
+            }
+        }
 
         return Result<Guid>.Success(sale.Id);
     }

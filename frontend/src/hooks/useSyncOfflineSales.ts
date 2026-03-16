@@ -44,17 +44,33 @@ export function useSyncOfflineSales() {
         for (const sale of pendingSales) {
           try {
             // Remove the IndexedDb specific tracking fields before sending
-            const { isSynced, isSyncBlocked, syncError, ...apiPayload } = sale;
-            
-            await apiClient.post('/sales', apiPayload, {
-              headers: {
-                'X-Branch-Id': sale.branchId,
-              },
-            });
+            const { isSynced, isSyncBlocked, syncError, syncAction, ...apiPayload } = sale;
+
+            if (syncAction === 'complete') {
+              await apiClient.post(`/sales/${sale.id}/complete`, {
+                discount: sale.discount,
+                details: sale.details,
+                payments: sale.payments,
+              }, {
+                headers: {
+                  'X-Branch-Id': sale.branchId,
+                },
+              });
+            } else {
+              await apiClient.post('/sales', {
+                ...apiPayload,
+                status: sale.status,
+              }, {
+                headers: {
+                  'X-Branch-Id': sale.branchId,
+                },
+              });
+            }
 
             // Mark as synced locally
             await db.sales.update(sale.id, {
               isSynced: true,
+              syncAction: undefined,
               isSyncBlocked: false,
               syncError: undefined
             });

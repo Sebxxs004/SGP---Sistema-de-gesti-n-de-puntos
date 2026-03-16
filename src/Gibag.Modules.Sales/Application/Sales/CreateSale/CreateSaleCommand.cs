@@ -12,6 +12,7 @@ public record CreateSaleCommand(
     decimal Tax,
     decimal Total,
     decimal Discount, // Total discount (percentage or fixed amount calculated on frontend)
+    SaleStatus? Status,
     DateTimeOffset? CreatedAt,
     List<CreateSaleDetailDto> Details,
     List<CreateSalePaymentDto> Payments

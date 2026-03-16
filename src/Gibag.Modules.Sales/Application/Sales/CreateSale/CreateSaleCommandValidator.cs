@@ -1,4 +1,5 @@
 using FluentValidation;
+using Gibag.Modules.Sales.Domain;
 
 namespace Gibag.Modules.Sales.Application.Sales.CreateSale;
 
@@ -19,7 +20,21 @@ public class CreateSaleCommandValidator : AbstractValidator<CreateSaleCommand>
             detail.RuleFor(d => d.UnitPrice).GreaterThanOrEqualTo(0);
         });
 
-        RuleForEach(x => x.Payments).ChildRules(payment => 
+        When(x => (x.Status ?? SaleStatus.Completed) == SaleStatus.Completed, () =>
+        {
+            RuleFor(x => x.Payments)
+                .NotEmpty()
+                .WithMessage("La venta completada debe incluir al menos un pago.");
+        });
+
+        When(x => (x.Status ?? SaleStatus.Completed) == SaleStatus.Pending, () =>
+        {
+            RuleFor(x => x.Payments)
+                .Must(payments => payments.Count == 0)
+                .WithMessage("Una venta en espera no debe registrar pagos todavía.");
+        });
+
+        RuleForEach(x => x.Payments).ChildRules(payment =>
         {
             payment.RuleFor(p => p.Amount).GreaterThan(0);
             payment.RuleFor(p => p.Method).IsInEnum();
