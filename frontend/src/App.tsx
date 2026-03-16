@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { RoleGuard } from './components/RoleGuard';
 import { MainLayout } from './layouts/MainLayout';
 import { Login } from './pages/Login';
 import { BranchSelectorView } from './pages/BranchSelector';
@@ -29,8 +30,10 @@ function App() {
               <Route path="/pos/open" element={<CashOpening />} />
               <Route path="/pos" element={<Sales />} />
               <Route path="/sales" element={<Navigate to="/pos" replace />} />
-              <Route path="/users" element={<Users />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route element={<RoleGuard allowedRoles={["Admin"]} />}>
+                <Route path="/users" element={<Users />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
             </Route>
           </Route>
         </Routes>

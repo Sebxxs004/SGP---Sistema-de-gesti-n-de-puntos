@@ -35,12 +35,52 @@ type AdjustModalState = {
   reason: string;
 };
 
+type MovementItem = {
+  id: string;
+  branchId: string;
+  productId: string;
+  productName: string;
+  userId: string;
+  userName: string;
+  movementType: string;
+  quantity: number;
+  reason?: string;
+  createdAt: string;
+};
+
+type InventoryMovementsResponse = {
+  success: boolean;
+  data: MovementItem[];
+};
+
+type MovementFilters = {
+  branchId: string;
+  productId: string;
+  userId: string;
+  reason: string;
+  from: string;
+  to: string;
+};
+
+const defaultMovementFilters: MovementFilters = {
+  branchId: '',
+  productId: '',
+  userId: '',
+  reason: '',
+  from: '',
+  to: '',
+};
+
 export const Inventory = () => {
   const queryClient = useQueryClient();
   const currentBranchId = useAuthStore((state) => state.currentBranchId);
+  const isAdmin = useAuthStore((state) => state.user?.role === 'Admin');
+  const branches = useAuthStore((state) => state.branches);
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState<{ text: string; isError: boolean } | null>(null);
   const [adjustModal, setAdjustModal] = useState<AdjustModalState | null>(null);
+  const [activeView, setActiveView] = useState<'stock' | 'movements'>('stock');
+  const [movementFilters, setMovementFilters] = useState<MovementFilters>(defaultMovementFilters);
 
   const stockQuery = useQuery({
     queryKey: ['inventory-stock', currentBranchId],
@@ -57,6 +97,7 @@ export const Inventory = () => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['inventory-stock', currentBranchId] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-movements'] });
       setNotification({ text: 'Ajuste de inventario aplicado.', isError: false });
       setAdjustModal(null);
     },
@@ -67,12 +108,67 @@ export const Inventory = () => {
 
   const products = useMemo(() => stockQuery.data ?? [], [stockQuery.data]);
 
+  const movementsQuery = useQuery({
+    queryKey: ['inventory-movements', currentBranchId, movementFilters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+
+      const branchFilter = isAdmin
+        ? (movementFilters.branchId || currentBranchId || '')
+        : (currentBranchId || '');
+
+      if (branchFilter) {
+        params.set('branchId', branchFilter);
+      }
+
+      if (movementFilters.productId) {
+        params.set('productId', movementFilters.productId);
+      }
+
+      if (movementFilters.userId) {
+        params.set('userId', movementFilters.userId);
+      }
+
+      if (movementFilters.reason.trim()) {
+        params.set('reason', movementFilters.reason.trim());
+      }
+
+      if (movementFilters.from) {
+        params.set('from', movementFilters.from);
+      }
+
+      if (movementFilters.to) {
+        params.set('to', movementFilters.to);
+      }
+
+      const response = await apiClient.get<InventoryMovementsResponse>(`/inventory/movements?${params.toString()}`);
+      return response.data.data;
+    },
+    enabled: !!currentBranchId,
+  });
+
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const movementUsers = useMemo(() => {
+    const users = new Map<string, string>();
+
+    for (const movement of movementsQuery.data ?? []) {
+      users.set(movement.userId, movement.userName);
+    }
+
+    return Array.from(users.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [movementsQuery.data]);
+
   const openAdjustModal = (product: InventoryProduct) => {
+    if (!isAdmin) {
+      return;
+    }
+
     setAdjustModal({
       productId: product.id,
       productName: product.name,
@@ -96,25 +192,50 @@ export const Inventory = () => {
     });
   };
 
+  const getMovementTypeLabel = (movementType: string) => {
+    switch (movementType.toLowerCase()) {
+      case 'sale':
+        return 'Venta';
+      case 'adjustment':
+        return 'Ajuste';
+      case 'in':
+        return 'Entrada';
+      case 'out':
+        return 'Salida';
+      case 'transfer':
+        return 'Transferencia';
+      default:
+        return movementType;
+    }
+  };
+
+  const getBranchName = (branchId: string) => branches.find((branch) => branch.id === branchId)?.name ?? 'Sucursal';
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Inventario</h1>
-          <p className="mt-1 text-sm text-gray-500">Gestión de stock de la sucursal activa</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {isAdmin ? 'Gestion de stock y auditoria de movimientos' : 'Inventario en modo solo lectura'}
+          </p>
         </div>
-        
-        <div className="relative w-full sm:w-72">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <PackageSearch size={20} className="text-gray-400" />
-          </div>
-          <input
-            type="text"
-            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            placeholder="Buscar por nombre o SKU..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium ${activeView === 'stock' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+            onClick={() => setActiveView('stock')}
+          >
+            Stock Actual
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium ${activeView === 'movements' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+            onClick={() => setActiveView('movements')}
+          >
+            Historial de Movimientos
+          </button>
         </div>
       </div>
 
@@ -124,82 +245,238 @@ export const Inventory = () => {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-600">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-700">
-              <tr>
-                <th scope="col" className="px-6 py-4 font-semibold">Producto</th>
-                <th scope="col" className="px-6 py-4 font-semibold">SKU</th>
-                <th scope="col" className="px-6 py-4 font-semibold">Categoría</th>
-                <th scope="col" className="px-6 py-4 font-semibold text-right">Precio</th>
-                <th scope="col" className="px-6 py-4 font-semibold text-right">Stock</th>
-                <th scope="col" className="px-6 py-4 font-semibold text-center">Estado</th>
-                <th scope="col" className="px-6 py-4 font-semibold text-center">Accion</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {stockQuery.isLoading && (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                    Cargando inventario de la sucursal...
-                  </td>
-                </tr>
-              )}
+      {activeView === 'stock' && (
+        <>
+          <div className="relative w-full sm:w-72">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <PackageSearch size={20} className="text-gray-400" />
+            </div>
+            <input
+              type="text"
+              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Buscar por nombre o SKU..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+                  <tr>
+                    <th scope="col" className="px-6 py-4 font-semibold">Producto</th>
+                    <th scope="col" className="px-6 py-4 font-semibold">SKU</th>
+                    <th scope="col" className="px-6 py-4 font-semibold">Categoria</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-right">Precio</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-right">Stock</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-center">Estado</th>
+                    {isAdmin && <th scope="col" className="px-6 py-4 font-semibold text-center">Accion</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {stockQuery.isLoading && (
+                    <tr>
+                      <td colSpan={isAdmin ? 7 : 6} className="px-6 py-12 text-center text-gray-500">
+                        Cargando inventario de la sucursal...
+                      </td>
+                    </tr>
+                  )}
 
-              {!stockQuery.isLoading && filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{product.name}</td>
-                  <td className="px-6 py-4">{product.sku}</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-                      {product.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">${product.price.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right font-medium">
-                    {product.stock}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    {product.stock > 10 ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-                        <Boxes size={14} /> Normal
-                      </span>
-                    ) : product.stock > 0 ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                        <AlertCircle size={14} /> Bajo
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
-                        <AlertCircle size={14} /> Agotado
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <button
-                      type="button"
-                      className="inline-flex items-center rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
-                      title="Ajustar stock"
-                      onClick={() => openAdjustModal(product)}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filteredProducts.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                    No se encontraron productos coincidentes.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  {!stockQuery.isLoading && filteredProducts.map((product) => (
+                    <tr key={product.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 font-medium text-gray-900">{product.name}</td>
+                      <td className="px-6 py-4">{product.sku}</td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                          {product.category}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">${product.price.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-medium">
+                        {product.stock}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {product.stock > 10 ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                            <Boxes size={14} /> Normal
+                          </span>
+                        ) : product.stock > 0 ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                            <AlertCircle size={14} /> Bajo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+                            <AlertCircle size={14} /> Agotado
+                          </span>
+                        )}
+                      </td>
+                      {isAdmin && (
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
+                            title="Ajustar stock"
+                            onClick={() => openAdjustModal(product)}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {filteredProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={isAdmin ? 7 : 6} className="px-6 py-12 text-center text-gray-500">
+                        No se encontraron productos coincidentes.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeView === 'movements' && (
+        <div className="space-y-4">
+          <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-6">
+            {isAdmin && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Sucursal</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  value={movementFilters.branchId}
+                  onChange={(e) => setMovementFilters((prev) => ({ ...prev, branchId: e.target.value }))}
+                >
+                  <option value="">Actual ({getBranchName(currentBranchId ?? '')})</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Producto</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={movementFilters.productId}
+                onChange={(e) => setMovementFilters((prev) => ({ ...prev, productId: e.target.value }))}
+              >
+                <option value="">Todos</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>{product.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Usuario</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={movementFilters.userId}
+                onChange={(e) => setMovementFilters((prev) => ({ ...prev, userId: e.target.value }))}
+              >
+                <option value="">Todos</option>
+                {movementUsers.map((user) => (
+                  <option key={user.id} value={user.id}>{user.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Motivo</label>
+              <input
+                type="text"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={movementFilters.reason}
+                onChange={(e) => setMovementFilters((prev) => ({ ...prev, reason: e.target.value }))}
+                placeholder="Merma, conteo..."
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Desde</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={movementFilters.from}
+                onChange={(e) => setMovementFilters((prev) => ({ ...prev, from: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Hasta</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={movementFilters.to}
+                onChange={(e) => setMovementFilters((prev) => ({ ...prev, to: e.target.value }))}
+              />
+            </div>
+
+            <div className="md:col-span-2 xl:col-span-6">
+              <button
+                type="button"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                onClick={() => setMovementFilters(defaultMovementFilters)}
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+                  <tr>
+                    <th scope="col" className="px-6 py-4 font-semibold">Fecha</th>
+                    <th scope="col" className="px-6 py-4 font-semibold">Producto</th>
+                    <th scope="col" className="px-6 py-4 font-semibold">Tipo</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-right">Cantidad</th>
+                    <th scope="col" className="px-6 py-4 font-semibold">Motivo</th>
+                    <th scope="col" className="px-6 py-4 font-semibold">Usuario</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {movementsQuery.isLoading && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                        Cargando historial de movimientos...
+                      </td>
+                    </tr>
+                  )}
+
+                  {!movementsQuery.isLoading && (movementsQuery.data ?? []).map((movement) => (
+                    <tr key={movement.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">{new Date(movement.createdAt).toLocaleString('es-CO')}</td>
+                      <td className="px-6 py-4 font-medium text-gray-900">{movement.productName}</td>
+                      <td className="px-6 py-4">{getMovementTypeLabel(movement.movementType)}</td>
+                      <td className={`px-6 py-4 text-right font-semibold ${movement.quantity >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {movement.quantity >= 0 ? '+' : ''}{movement.quantity}
+                      </td>
+                      <td className="px-6 py-4">{movement.reason || '-'}</td>
+                      <td className="px-6 py-4">{movement.userName}</td>
+                    </tr>
+                  ))}
+
+                  {!movementsQuery.isLoading && (movementsQuery.data ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                        No hay movimientos para los filtros seleccionados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      {adjustModal && (
+      {isAdmin && adjustModal && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between">

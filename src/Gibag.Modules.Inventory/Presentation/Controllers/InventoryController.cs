@@ -1,6 +1,8 @@
 using Gibag.Modules.Inventory.Application.Products.CreateProduct;
 using Gibag.Modules.Inventory.Application.Stock.AdjustStock;
+using Gibag.Modules.Inventory.Domain;
 using Gibag.Modules.Inventory.Infrastructure;
+using Gibag.Modules.Core.Infrastructure;
 using Gibag.Shared.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -18,12 +20,14 @@ public class InventoryController : ControllerBase
     private readonly ISender _sender;
     private readonly ICurrentUser _currentUser;
     private readonly InventoryDbContext _dbContext;
+    private readonly CoreDbContext _coreDbContext;
 
-    public InventoryController(ISender sender, ICurrentUser currentUser, InventoryDbContext dbContext)
+    public InventoryController(ISender sender, ICurrentUser currentUser, InventoryDbContext dbContext, CoreDbContext coreDbContext)
     {
         _sender = sender;
         _currentUser = currentUser;
         _dbContext = dbContext;
+        _coreDbContext = coreDbContext;
     }
 
     [HttpGet("stock")]
@@ -219,6 +223,95 @@ public class InventoryController : ControllerBase
             }
         });
     }
+
+    [HttpGet("movements")]
+    public async Task<IActionResult> GetMovements([FromQuery] StockMovementsFilterRequest request, CancellationToken cancellationToken)
+    {
+        if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar movimientos." }
+            });
+        }
+
+        var movementsQuery = _dbContext.StockMovements
+            .AsNoTracking()
+            .Include(sm => sm.Product)
+            .AsQueryable();
+
+        if (request.BranchId.HasValue && request.BranchId.Value != Guid.Empty)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.BranchId == request.BranchId.Value);
+        }
+
+        if (request.ProductId.HasValue && request.ProductId.Value != Guid.Empty)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.ProductId == request.ProductId.Value);
+        }
+
+        if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.UserId == request.UserId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Reason))
+        {
+            var reason = request.Reason.Trim().ToLowerInvariant();
+            movementsQuery = movementsQuery.Where(sm => sm.Reference != null && sm.Reference.ToLower().Contains(reason));
+        }
+
+        if (request.From.HasValue)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.CreatedAt >= request.From.Value);
+        }
+
+        if (request.To.HasValue)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.CreatedAt <= request.To.Value);
+        }
+
+        var movements = await movementsQuery
+            .OrderByDescending(sm => sm.CreatedAt)
+            .Take(500)
+            .ToListAsync(cancellationToken);
+
+        var userIds = movements
+            .Select(sm => sm.UserId)
+            .Distinct()
+            .ToList();
+
+        var usersById = await _coreDbContext.Users
+            .AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FirstName, u.LastName, u.Email })
+            .ToDictionaryAsync(
+                u => u.Id,
+                u => string.IsNullOrWhiteSpace($"{u.FirstName} {u.LastName}".Trim())
+                    ? u.Email
+                    : $"{u.FirstName} {u.LastName}".Trim(),
+                cancellationToken);
+
+        var data = movements.Select(sm => new StockMovementListItemDto(
+            sm.Id,
+            sm.BranchId,
+            sm.ProductId,
+            sm.Product?.Name ?? "Producto desconocido",
+            sm.UserId,
+            usersById.TryGetValue(sm.UserId, out var userName) ? userName : "Usuario desconocido",
+            sm.MovementType.ToString(),
+            sm.Quantity,
+            sm.Reference,
+            sm.CreatedAt
+        )).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data
+        });
+    }
 }
 
 public sealed record CatalogCategorySyncDto(Guid Id, string Name);
@@ -237,4 +330,26 @@ public sealed record AdjustStockRequest(
     Guid ProductId,
     decimal QuantityDelta,
     string Reason
+);
+
+public sealed record StockMovementsFilterRequest(
+    Guid? BranchId,
+    Guid? ProductId,
+    string? Reason,
+    Guid? UserId,
+    DateTimeOffset? From,
+    DateTimeOffset? To
+);
+
+public sealed record StockMovementListItemDto(
+    Guid Id,
+    Guid BranchId,
+    Guid ProductId,
+    string ProductName,
+    Guid UserId,
+    string UserName,
+    string MovementType,
+    decimal Quantity,
+    string? Reason,
+    DateTimeOffset CreatedAt
 );

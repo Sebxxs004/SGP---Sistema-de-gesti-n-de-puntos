@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Gibag.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e14e285a36162a12936081fa825ca359b7feac68")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5423c7a3e46293a16cdb2762bb94f7fafa36b22c")]
 [assembly: System.Reflection.AssemblyProductAttribute("Gibag.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Gibag.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

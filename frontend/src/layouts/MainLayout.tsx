@@ -9,18 +9,25 @@ export const MainLayout = () => {
   const { user, branches, currentBranchId, setCurrentBranchId, logout } = useAuthStore();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isAdmin = user?.role === 'Admin';
   
   // Initialize sync hook. It listens to online/offline globally.
   const { isSyncing } = useSyncOfflineSales();
   const { isCatalogSyncing } = useCatalogSync();
 
-  const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Inventario', href: '/inventory', icon: Package },
-    { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
-    { name: 'Usuarios', href: '/users', icon: Users },
-    { name: 'Configuracion', href: '/settings', icon: Settings },
-  ];
+  const navigation = isAdmin
+    ? [
+        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+        { name: 'Inventario', href: '/inventory', icon: Package },
+        { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
+        { name: 'Usuarios', href: '/users', icon: Users },
+        { name: 'Configuracion', href: '/settings', icon: Settings },
+      ]
+    : [
+        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+        { name: 'Inventario', href: '/inventory', icon: Package },
+        { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
+      ];
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">

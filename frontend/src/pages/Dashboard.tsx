@@ -45,6 +45,7 @@ interface SalesSummaryResponse {
 
 export const Dashboard = () => {
   const user = useAuthStore(state => state.user);
+  const isAdmin = user?.role === 'Admin';
   const currentBranchId = useAuthStore(state => state.currentBranchId);
   const [offlineSalesCount, setOfflineSalesCount] = useState(0);
   const [blockedOfflineSalesCount, setBlockedOfflineSalesCount] = useState(0);
@@ -240,7 +241,7 @@ export const Dashboard = () => {
               ? `${blockedOfflineSalesCount} bloqueada(s) por error de validación`
               : 'Esperando sincronización'}
           </p>
-          {blockedOfflineSalesCount > 0 && (
+          {isAdmin && blockedOfflineSalesCount > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -268,7 +269,8 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {isAdmin && (
+        <div className="grid gap-6 lg:grid-cols-3">
         <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm lg:col-span-2">
           <h3 className="mb-4 text-lg font-semibold text-gray-800">Ventas Últimos 7 Días</h3>
           <div className="h-72">
@@ -313,9 +315,11 @@ export const Dashboard = () => {
             <p>Tarjeta: {summary?.paymentDistribution.card.percentage ?? 0}%</p>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
-      <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+      {isAdmin && (
+        <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-gray-800">Top 5 Productos Más Vendidos (Hoy)</h3>
         {summary && summary.topProducts.length > 0 ? (
           <div className="space-y-3">
@@ -335,7 +339,8 @@ export const Dashboard = () => {
         ) : (
           <p className="text-sm text-gray-500">Sin ventas registradas hoy para mostrar ranking.</p>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
