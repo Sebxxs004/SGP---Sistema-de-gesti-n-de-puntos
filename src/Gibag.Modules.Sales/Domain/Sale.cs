@@ -51,4 +51,11 @@ public class Sale : TenantEntityBase
     {
         Payments.Add(payment);
     }
+
+    public void UpdateTotals(decimal subTotal, decimal tax, decimal total)
+    {
+        SubTotal = subTotal;
+        Tax = tax;
+        Total = total;
+    }
 }

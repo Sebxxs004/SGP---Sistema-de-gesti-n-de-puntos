@@ -22,6 +22,8 @@ type CompanySettings = {
   name: string;
   taxId: string;
   thankYouMessage?: string;
+  taxPercentage?: number;
+  currencySymbol?: string;
 };
 
 type CompanySettingsResponse = {
@@ -51,6 +53,8 @@ export const Settings = () => {
   const [activeTab, setActiveTab] = useState<'branches' | 'company'>('branches');
   const [branchForm, setBranchForm] = useState<BranchForm>(defaultBranchForm);
   const [companyMessage, setCompanyMessage] = useState('');
+  const [companyTaxPercentage, setCompanyTaxPercentage] = useState('16');
+  const [companyCurrencySymbol, setCompanyCurrencySymbol] = useState('$');
   const [notification, setNotification] = useState<{ text: string; isError: boolean } | null>(null);
 
   const branchesQuery = useQuery({
@@ -114,11 +118,16 @@ export const Settings = () => {
   });
 
   const saveCompanyMutation = useMutation({
-    mutationFn: async (message: string) => {
-      await apiClient.put('/core/company/settings', { thankYouMessage: message });
+    mutationFn: async (payload: { message: string; taxPercentage: number; currencySymbol: string }) => {
+      await apiClient.put('/core/company/settings', {
+        thankYouMessage: payload.message,
+        taxPercentage: payload.taxPercentage,
+        currencySymbol: payload.currencySymbol,
+      });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['settings-company'] });
+      await queryClient.invalidateQueries({ queryKey: ['company-settings-global'] });
       setNotification({ text: 'Mensaje de agradecimiento actualizado.', isError: false });
     },
     onError: () => {
@@ -143,7 +152,11 @@ export const Settings = () => {
 
   const handleCompanySubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    await saveCompanyMutation.mutateAsync(companyMessage);
+    await saveCompanyMutation.mutateAsync({
+      message: companyMessage,
+      taxPercentage: Number(companyTaxPercentage),
+      currencySymbol: companyCurrencySymbol,
+    });
   };
 
   const beginEditBranch = (branch: BranchItem) => {
@@ -181,6 +194,8 @@ export const Settings = () => {
             onClick={() => {
               setActiveTab('company');
               setCompanyMessage(companyData?.thankYouMessage ?? '');
+              setCompanyTaxPercentage(String(companyData?.taxPercentage ?? 16));
+              setCompanyCurrencySymbol(companyData?.currencySymbol ?? '$');
             }}
           >
             Empresa
@@ -330,6 +345,31 @@ export const Settings = () => {
                 onChange={(e) => setCompanyMessage(e.target.value)}
                 placeholder="Gracias por su compra. Vuelva pronto."
               />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Impuesto (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  value={companyTaxPercentage}
+                  onChange={(e) => setCompanyTaxPercentage(e.target.value)}
+                  placeholder="16"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Símbolo de moneda</label>
+                <input
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  value={companyCurrencySymbol}
+                  onChange={(e) => setCompanyCurrencySymbol(e.target.value)}
+                  placeholder="$"
+                />
+              </div>
             </div>
 
             <button

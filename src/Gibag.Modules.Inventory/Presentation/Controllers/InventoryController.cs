@@ -86,6 +86,174 @@ public class InventoryController : ControllerBase
         });
     }
 
+    [HttpGet("categories")]
+    public async Task<IActionResult> GetCategories(CancellationToken cancellationToken)
+    {
+        var categories = await _dbContext.Categories
+            .AsNoTracking()
+            .OrderByDescending(c => c.IsActive)
+            .ThenBy(c => c.Name)
+            .Select(c => new CategoryListItemDto(
+                c.Id,
+                c.Name,
+                c.Description,
+                c.IsActive
+            ))
+            .ToListAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = categories
+        });
+    }
+
+    [HttpPost("categories")]
+    public async Task<IActionResult> CreateCategory([FromBody] UpsertCategoryRequest request, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        if (_currentUser.TenantId == null || _currentUser.TenantId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Tenant.Required", message = "Debes enviar X-Tenant-Id para crear categorías." }
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.Invalid", message = "El nombre de la categoría es obligatorio." }
+            });
+        }
+
+        var normalizedName = request.Name.Trim();
+        var duplicated = await _dbContext.Categories
+            .AnyAsync(c => c.Name.ToLower() == normalizedName.ToLower(), cancellationToken);
+
+        if (duplicated)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Category.Duplicate", message = "Ya existe una categoría con este nombre." }
+            });
+        }
+
+        var category = new Category(
+            _currentUser.TenantId.Value,
+            normalizedName,
+            string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim());
+
+        await _dbContext.Categories.AddAsync(category, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new CategoryListItemDto(category.Id, category.Name, category.Description, category.IsActive)
+        });
+    }
+
+    [HttpPut("categories/{id:guid}")]
+    public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] UpsertCategoryRequest request, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.Invalid", message = "El nombre de la categoría es obligatorio." }
+            });
+        }
+
+        var category = await _dbContext.Categories.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        if (category == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Category.NotFound", message = "Categoría no encontrada." }
+            });
+        }
+
+        var normalizedName = request.Name.Trim();
+        var duplicated = await _dbContext.Categories
+            .AnyAsync(c => c.Id != id && c.Name.ToLower() == normalizedName.ToLower(), cancellationToken);
+
+        if (duplicated)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Category.Duplicate", message = "Ya existe una categoría con este nombre." }
+            });
+        }
+
+        category.Update(normalizedName, string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim());
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new CategoryListItemDto(category.Id, category.Name, category.Description, category.IsActive)
+        });
+    }
+
+    [HttpDelete("categories/{id:guid}")]
+    public async Task<IActionResult> DeleteCategory(Guid id, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        var category = await _dbContext.Categories.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        if (category == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Category.NotFound", message = "Categoría no encontrada." }
+            });
+        }
+
+        var hasProducts = await _dbContext.Products.AnyAsync(p => p.CategoryId == id && p.IsActive, cancellationToken);
+        if (hasProducts)
+        {
+            category.Deactivate();
+        }
+        else
+        {
+            _dbContext.Categories.Remove(category);
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                id,
+                deleted = !hasProducts,
+                deactivated = hasProducts
+            }
+        });
+    }
+
     [HttpGet("catalog/sync")]
     public async Task<IActionResult> SyncCatalog([FromQuery] DateTimeOffset? lastSyncDate, CancellationToken cancellationToken)
     {
@@ -156,6 +324,11 @@ public class InventoryController : ControllerBase
     [HttpPost("products")]
     public async Task<IActionResult> CreateProduct([FromBody] CreateProductCommand command)
     {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
         if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
         {
             return BadRequest(new
@@ -184,6 +357,11 @@ public class InventoryController : ControllerBase
     [HttpPost("stock/adjust")]
     public async Task<IActionResult> AdjustStock([FromBody] AdjustStockRequest request)
     {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
         if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
         {
             return BadRequest(new
@@ -312,6 +490,8 @@ public class InventoryController : ControllerBase
             data
         });
     }
+
+    private bool IsAdmin() => string.Equals(_currentUser.Role, "Admin", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record CatalogCategorySyncDto(Guid Id, string Name);
@@ -352,4 +532,16 @@ public sealed record StockMovementListItemDto(
     decimal Quantity,
     string? Reason,
     DateTimeOffset CreatedAt
+);
+
+public sealed record UpsertCategoryRequest(
+    string Name,
+    string? Description
+);
+
+public sealed record CategoryListItemDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    bool IsActive
 );

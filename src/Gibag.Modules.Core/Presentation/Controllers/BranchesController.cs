@@ -9,7 +9,6 @@ namespace Gibag.Modules.Core.Presentation.Controllers;
 
 [ApiController]
 [Route("api/v1/core")]
-[Authorize(Roles = "Admin")]
 public class BranchesController : ControllerBase
 {
     private readonly CoreDbContext _dbContext;
@@ -22,6 +21,7 @@ public class BranchesController : ControllerBase
     }
 
     [HttpGet("branches")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetBranches(CancellationToken cancellationToken)
     {
         var branches = await _dbContext.Branches
@@ -47,6 +47,7 @@ public class BranchesController : ControllerBase
     }
 
     [HttpPost("branches")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateBranch([FromBody] CreateBranchRequest request, CancellationToken cancellationToken)
     {
         var tenantId = _tenantService.CurrentTenantId;
@@ -94,6 +95,7 @@ public class BranchesController : ControllerBase
     }
 
     [HttpPut("branches/{id:guid}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateBranch(Guid id, [FromBody] UpdateBranchRequest request, CancellationToken cancellationToken)
     {
         var branch = await _dbContext.Branches.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
@@ -139,6 +141,7 @@ public class BranchesController : ControllerBase
     }
 
     [HttpPatch("branches/{id:guid}/deactivate")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeactivateBranch(Guid id, CancellationToken cancellationToken)
     {
         var branch = await _dbContext.Branches.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
@@ -162,6 +165,7 @@ public class BranchesController : ControllerBase
     }
 
     [HttpGet("company/settings")]
+    [Authorize]
     public async Task<IActionResult> GetCompanySettings(CancellationToken cancellationToken)
     {
         var tenantId = _tenantService.CurrentTenantId;
@@ -195,12 +199,15 @@ public class BranchesController : ControllerBase
                 tenant.Id,
                 tenant.Name,
                 tenant.TaxId,
+                tenant.TaxPercentage,
+                tenant.CurrencySymbol,
                 thankYouMessage = tenant.ThankYouMessage
             }
         });
     }
 
     [HttpPut("company/settings")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateCompanySettings([FromBody] UpdateCompanySettingsRequest request, CancellationToken cancellationToken)
     {
         var tenantId = _tenantService.CurrentTenantId;
@@ -223,7 +230,20 @@ public class BranchesController : ControllerBase
             });
         }
 
+        if (request.TaxPercentage.HasValue && request.TaxPercentage.Value < 0)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.InvalidTax", message = "El porcentaje de impuesto no puede ser negativo." }
+            });
+        }
+
         tenant.UpdateThankYouMessage(request.ThankYouMessage);
+        tenant.UpdateFinancialSettings(
+            request.TaxPercentage ?? tenant.TaxPercentage,
+            request.CurrencySymbol ?? tenant.CurrencySymbol);
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Ok(new
@@ -234,6 +254,8 @@ public class BranchesController : ControllerBase
                 tenant.Id,
                 tenant.Name,
                 tenant.TaxId,
+                tenant.TaxPercentage,
+                tenant.CurrencySymbol,
                 thankYouMessage = tenant.ThankYouMessage
             }
         });
@@ -244,4 +266,4 @@ public sealed record CreateBranchRequest(string Name, string Address, string? Ph
 
 public sealed record UpdateBranchRequest(string Name, string Address, string? Phone, string? Timezone);
 
-public sealed record UpdateCompanySettingsRequest(string? ThankYouMessage);
+public sealed record UpdateCompanySettingsRequest(string? ThankYouMessage, decimal? TaxPercentage, string? CurrencySymbol);

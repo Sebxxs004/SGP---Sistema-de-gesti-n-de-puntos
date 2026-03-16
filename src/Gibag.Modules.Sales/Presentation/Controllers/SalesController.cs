@@ -100,7 +100,9 @@ public class SalesController : ControllerBase
                 t.Id,
                 t.Name,
                 t.TaxId,
-                t.ThankYouMessage
+                t.ThankYouMessage,
+                t.TaxPercentage,
+                t.CurrencySymbol
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -129,7 +131,9 @@ public class SalesController : ControllerBase
                     id = tenant?.Id ?? saleData.TenantId,
                     name = tenant?.Name ?? "SGP",
                     taxId = tenant?.TaxId ?? "N/A",
-                    thankYouMessage = tenant?.ThankYouMessage ?? "Gracias por su compra"
+                    thankYouMessage = tenant?.ThankYouMessage ?? "Gracias por su compra",
+                    taxPercentage = tenant?.TaxPercentage ?? 16m,
+                    currencySymbol = string.IsNullOrWhiteSpace(tenant?.CurrencySymbol) ? "$" : tenant?.CurrencySymbol
                 },
                 branch = new
                 {

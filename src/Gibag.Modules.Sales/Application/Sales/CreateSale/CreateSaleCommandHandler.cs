@@ -1,6 +1,7 @@
 using Gibag.Modules.Sales.Application.Interfaces;
 using Gibag.Modules.Sales.Domain;
 using Gibag.Modules.Sales.Infrastructure;
+using Gibag.Modules.Core.Infrastructure;
 using Gibag.Shared.Interfaces;
 using Gibag.Shared.Models;
 using MediatR;
@@ -14,17 +15,20 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
     private readonly IInventoryService _inventoryService;
     private readonly ITenantService _tenantService;
     private readonly ICurrentUser _currentUser;
+    private readonly CoreDbContext _coreDbContext;
 
     public CreateSaleCommandHandler(
         SalesDbContext dbContext, 
         IInventoryService inventoryService,
         ITenantService tenantService,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        CoreDbContext coreDbContext)
     {
         _dbContext = dbContext;
         _inventoryService = inventoryService;
         _tenantService = tenantService;
         _currentUser = currentUser;
+        _coreDbContext = coreDbContext;
     }
 
     public async Task<Result<Guid>> Handle(CreateSaleCommand request, CancellationToken cancellationToken)
@@ -36,6 +40,18 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         var userId = _currentUser.Id;
         if (userId == null || userId == Guid.Empty)
             return Result<Guid>.Failure("Auth.UserMissing", "No se encontró el usuario en sesión para registrar la venta.");
+
+        var tenantConfig = await _coreDbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == tenantId.Value)
+            .Select(t => new
+            {
+                t.TaxPercentage
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (tenantConfig == null)
+            return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
 
         // Idempotency Check for offline-sync retries
         bool saleAlreadyExists = await _dbContext.Sales
@@ -124,6 +140,12 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
                 paymentDto.Method
             ));
         }
+
+        var subTotalCalculated = sale.Details.Sum(d => d.SubTotal);
+        var taxCalculated = Math.Round(subTotalCalculated * (tenantConfig.TaxPercentage / 100m), 2, MidpointRounding.AwayFromZero);
+        var totalCalculated = subTotalCalculated + taxCalculated;
+
+        sale.UpdateTotals(subTotalCalculated, taxCalculated, totalCalculated);
 
         await _dbContext.Sales.AddAsync(sale, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);

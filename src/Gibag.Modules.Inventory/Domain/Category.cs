@@ -25,4 +25,15 @@ public class Category : TenantEntityBase
         IsActive = true;
         Products = new List<Product>();
     }
+
+    public void Update(string name, string? description)
+    {
+        Name = name;
+        Description = description;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
 }

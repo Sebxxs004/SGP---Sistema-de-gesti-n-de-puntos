@@ -48,6 +48,16 @@ public static class DbInitializer
                 ADD COLUMN IF NOT EXISTS ""ThankYouMessage"" text NULL;
             ");
 
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Tenants""
+                ADD COLUMN IF NOT EXISTS ""TaxPercentage"" numeric NOT NULL DEFAULT 16;
+            ");
+
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Tenants""
+                ADD COLUMN IF NOT EXISTS ""CurrencySymbol"" text NOT NULL DEFAULT '$';
+            ");
+
             logger.LogInformation("[Seed] Migrations applied.");
 
             // ── 2. Seed Core entities once ──────────────────────────────────
@@ -58,6 +68,7 @@ public static class DbInitializer
                 // ── 3. Tenant ────────────────────────────────────────────────
                 var tenant = new Tenant("SGP Demo", "000-000-0000-0", "Free");
                 tenant.UpdateThankYouMessage("Gracias por preferirnos");
+                tenant.UpdateFinancialSettings(16m, "$" );
                 // Override the auto-generated Id with the fixed seed Id via EF property
                 coreDb.Entry(tenant).Property("Id").CurrentValue = SeedTenantId;
                 await coreDb.Tenants.AddAsync(tenant);
@@ -95,6 +106,21 @@ public static class DbInitializer
                 {
                     existingTenant.UpdateThankYouMessage("Gracias por preferirnos");
                     await coreDb.SaveChangesAsync();
+                }
+
+                if (existingTenant != null)
+                {
+                    var currencySymbol = string.IsNullOrWhiteSpace(existingTenant.CurrencySymbol)
+                        ? "$"
+                        : existingTenant.CurrencySymbol;
+
+                    var taxPercentage = existingTenant.TaxPercentage <= 0 ? 16m : existingTenant.TaxPercentage;
+
+                    if (currencySymbol != existingTenant.CurrencySymbol || taxPercentage != existingTenant.TaxPercentage)
+                    {
+                        existingTenant.UpdateFinancialSettings(taxPercentage, currencySymbol);
+                        await coreDb.SaveChangesAsync();
+                    }
                 }
 
                 var existingBranch = await coreDb.Branches

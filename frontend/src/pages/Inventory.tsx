@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PackageSearch, Boxes, AlertCircle, Plus, X } from 'lucide-react';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
+import { useCompanySettings } from '../hooks/useCompanySettings';
+import { formatCurrency } from '../utils/currency';
 
 type InventoryProduct = {
   id: string;
@@ -62,6 +64,29 @@ type MovementFilters = {
   to: string;
 };
 
+type CategoryItem = {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+};
+
+type CategoriesResponse = {
+  success: boolean;
+  data: CategoryItem[];
+};
+
+type CategoryForm = {
+  id?: string;
+  name: string;
+  description: string;
+};
+
+const defaultCategoryForm: CategoryForm = {
+  name: '',
+  description: '',
+};
+
 const defaultMovementFilters: MovementFilters = {
   branchId: '',
   productId: '',
@@ -76,11 +101,14 @@ export const Inventory = () => {
   const currentBranchId = useAuthStore((state) => state.currentBranchId);
   const isAdmin = useAuthStore((state) => state.user?.role === 'Admin');
   const branches = useAuthStore((state) => state.branches);
+  const companySettingsQuery = useCompanySettings();
+  const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState<{ text: string; isError: boolean } | null>(null);
   const [adjustModal, setAdjustModal] = useState<AdjustModalState | null>(null);
-  const [activeView, setActiveView] = useState<'stock' | 'movements'>('stock');
+  const [activeView, setActiveView] = useState<'stock' | 'movements' | 'categories'>('stock');
   const [movementFilters, setMovementFilters] = useState<MovementFilters>(defaultMovementFilters);
+  const [categoryForm, setCategoryForm] = useState<CategoryForm>(defaultCategoryForm);
 
   const stockQuery = useQuery({
     queryKey: ['inventory-stock', currentBranchId],
@@ -147,6 +175,53 @@ export const Inventory = () => {
     enabled: !!currentBranchId,
   });
 
+  const categoriesQuery = useQuery({
+    queryKey: ['inventory-categories'],
+    queryFn: async () => {
+      const response = await apiClient.get<CategoriesResponse>('/inventory/categories');
+      return response.data.data;
+    },
+    enabled: isAdmin,
+  });
+
+  const saveCategoryMutation = useMutation({
+    mutationFn: async (payload: CategoryForm) => {
+      if (payload.id) {
+        await apiClient.put(`/inventory/categories/${payload.id}`, {
+          name: payload.name,
+          description: payload.description,
+        });
+        return;
+      }
+
+      await apiClient.post('/inventory/categories', {
+        name: payload.name,
+        description: payload.description,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory-categories'] });
+      setCategoryForm(defaultCategoryForm);
+      setNotification({ text: 'Categoria guardada correctamente.', isError: false });
+    },
+    onError: () => {
+      setNotification({ text: 'No se pudo guardar la categoria.', isError: true });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (categoryId: string) => {
+      await apiClient.delete(`/inventory/categories/${categoryId}`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory-categories'] });
+      setNotification({ text: 'Categoria eliminada/desactivada.', isError: false });
+    },
+    onError: () => {
+      setNotification({ text: 'No se pudo eliminar la categoria.', isError: true });
+    },
+  });
+
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
@@ -211,6 +286,11 @@ export const Inventory = () => {
 
   const getBranchName = (branchId: string) => branches.find((branch) => branch.id === branchId)?.name ?? 'Sucursal';
 
+  const submitCategory = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await saveCategoryMutation.mutateAsync(categoryForm);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -236,6 +316,15 @@ export const Inventory = () => {
           >
             Historial de Movimientos
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${activeView === 'categories' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+              onClick={() => setActiveView('categories')}
+            >
+              Categorias
+            </button>
+          )}
         </div>
       </div>
 
@@ -291,7 +380,7 @@ export const Inventory = () => {
                           {product.category}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">${product.price.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right">{formatCurrency(product.price, currencySymbol)}</td>
                       <td className="px-6 py-4 text-right font-medium">
                         {product.stock}
                       </td>
@@ -472,6 +561,114 @@ export const Inventory = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && activeView === 'categories' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <form className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm" onSubmit={submitCategory}>
+            <h2 className="text-lg font-semibold text-gray-900">{categoryForm.id ? 'Editar categoria' : 'Nueva categoria'}</h2>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Nombre</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm((prev) => ({ ...prev, name: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Descripcion</label>
+              <textarea
+                className="min-h-20 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                value={categoryForm.description}
+                onChange={(e) => setCategoryForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={saveCategoryMutation.isPending}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {saveCategoryMutation.isPending ? 'Guardando...' : 'Guardar categoria'}
+              </button>
+
+              {categoryForm.id && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryForm(defaultCategoryForm)}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </form>
+
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-4 py-3 text-left">Categoria</th>
+                  <th className="px-4 py-3 text-center">Estado</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {categoriesQuery.isLoading && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-8 text-center text-gray-500">Cargando categorias...</td>
+                  </tr>
+                )}
+
+                {!categoriesQuery.isLoading && (categoriesQuery.data ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-8 text-center text-gray-500">Sin categorias registradas.</td>
+                  </tr>
+                )}
+
+                {(categoriesQuery.data ?? []).map((category) => (
+                  <tr key={category.id}>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{category.name}</p>
+                      <p className="text-xs text-gray-500">{category.description || 'Sin descripcion'}</p>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`rounded-full px-2 py-1 text-xs font-medium ${category.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {category.isActive ? 'Activa' : 'Inactiva'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryForm({
+                            id: category.id,
+                            name: category.name,
+                            description: category.description ?? '',
+                          })}
+                          className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteCategoryMutation.mutate(category.id)}
+                          className="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

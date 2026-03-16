@@ -10,6 +10,8 @@ import { getCatalogLastSyncAt, getCatalogProducts, syncCatalog } from '../servic
 import type { CatalogProduct } from '../db/db';
 import { TicketTemplate } from '../components/TicketTemplate';
 import type { TicketData, TicketLineItem, TicketPayment } from '../components/TicketTemplate';
+import { useCompanySettings } from '../hooks/useCompanySettings';
+import { formatCurrency } from '../utils/currency';
 
 interface SessionSaleHistoryItem {
   id: string;
@@ -65,6 +67,9 @@ export const Sales = () => {
   } | null>(null);
   
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
+  const companySettingsQuery = useCompanySettings();
+  const taxPercentage = companySettingsQuery.data?.taxPercentage ?? 16;
+  const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
   const currentBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal';
 
@@ -113,11 +118,10 @@ export const Sales = () => {
   }, [currentBranchId]);
 
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const tax = subTotal * 0.16; // 16% assumed
+  const tax = subTotal * (taxPercentage / 100);
   const total = subTotal + tax;
 
-  const formatMoney = (value: number) =>
-    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(value);
+  const formatMoney = (value: number) => formatCurrency(value, currencySymbol);
 
   const buildLocalTicketData = (
     saleId: string,
@@ -154,9 +158,11 @@ export const Sales = () => {
       issuedAt: createdAt,
       company: {
         id: tenantId ?? 'N/A',
-        name: 'SGP',
-        taxId: 'N/A',
-        thankYouMessage: 'Gracias por su compra',
+        name: companySettingsQuery.data?.name ?? 'SGP',
+        taxId: companySettingsQuery.data?.taxId ?? 'N/A',
+        thankYouMessage: companySettingsQuery.data?.thankYouMessage ?? 'Gracias por su compra',
+        taxPercentage,
+        currencySymbol,
       },
       branch: {
         id: currentBranchId ?? 'N/A',
@@ -472,7 +478,7 @@ export const Sales = () => {
             >
               <span className="text-xs text-gray-400 mb-1">{p.sku}</span>
               <span className="font-medium text-gray-800 flex-1">{p.name}</span>
-              <span className="text-blue-600 font-bold mt-2">${p.price.toFixed(2)}</span>
+              <span className="text-blue-600 font-bold mt-2">{formatMoney(p.price)}</span>
             </button>
           ))}
           {filteredCatalog.length === 0 && (
@@ -541,7 +547,7 @@ export const Sales = () => {
             <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-800 line-clamp-1">{item.name}</p>
-                <p className="text-xs text-blue-600 font-semibold">${item.price.toFixed(2)}</p>
+                <p className="text-xs text-blue-600 font-semibold">{formatMoney(item.price)}</p>
               </div>
               <div className="flex items-center bg-white rounded-md border border-gray-200 shadow-sm">
                 <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:bg-gray-100 text-gray-500"><Minus size={14}/></button>
@@ -558,10 +564,10 @@ export const Sales = () => {
         {/* Totals & Actions */}
         <div className="p-4 border-t border-gray-100 bg-gray-50 space-y-4">
           <div className="space-y-1 text-sm">
-            <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>${subTotal.toFixed(2)}</span></div>
-            <div className="flex justify-between text-gray-500"><span>IVA (16%)</span><span>${tax.toFixed(2)}</span></div>
+            <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>{formatMoney(subTotal)}</span></div>
+            <div className="flex justify-between text-gray-500"><span>IVA ({taxPercentage.toFixed(2)}%)</span><span>{formatMoney(tax)}</span></div>
             <div className="flex justify-between text-lg font-bold text-gray-900 border-t border-gray-200 pt-2 mt-2">
-              <span>Total</span><span>${total.toFixed(2)}</span>
+              <span>Total</span><span>{formatMoney(total)}</span>
             </div>
           </div>
 
@@ -589,10 +595,10 @@ export const Sales = () => {
           {closeSummary && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
               <p className="font-semibold">Resumen de Arqueo</p>
-              <p>Ventas totales: ${closeSummary.salesTotal.toFixed(2)}</p>
-              <p>Esperado: ${closeSummary.finalBalanceExpected.toFixed(2)}</p>
-              <p>Contado: ${closeSummary.finalBalanceEncounted.toFixed(2)}</p>
-              <p>Diferencia: ${closeSummary.difference.toFixed(2)}</p>
+              <p>Ventas totales: {formatMoney(closeSummary.salesTotal)}</p>
+              <p>Esperado: {formatMoney(closeSummary.finalBalanceExpected)}</p>
+              <p>Contado: {formatMoney(closeSummary.finalBalanceEncounted)}</p>
+              <p>Diferencia: {formatMoney(closeSummary.difference)}</p>
             </div>
           )}
 

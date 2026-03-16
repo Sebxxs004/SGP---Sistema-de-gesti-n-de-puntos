@@ -3,6 +3,8 @@ import { useAuthStore } from '../store/useAuthStore';
 import { db } from '../db/db';
 import { Activity, Clock, Receipt, TrendingUp } from 'lucide-react';
 import apiClient from '../api/apiClient';
+import { useCompanySettings } from '../hooks/useCompanySettings';
+import { formatCurrency } from '../utils/currency';
 import {
   Bar,
   BarChart,
@@ -54,9 +56,10 @@ export const Dashboard = () => {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SalesSummaryResponse['data'] | null>(null);
   const [actionMessage, setActionMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const companySettingsQuery = useCompanySettings();
+  const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
 
-  const formatMoney = (value: number) =>
-    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(value);
+  const formatMoney = (value: number) => formatCurrency(value, currencySymbol);
 
   const refreshSummary = async () => {
     if (!currentBranchId) {
@@ -210,7 +213,7 @@ export const Dashboard = () => {
             <TrendingUp className="text-emerald-500" size={20} />
           </div>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
-            {summary ? formatMoney(summary.totalSalesToday) : '$0'}
+            {summary ? formatMoney(summary.totalSalesToday) : formatMoney(0)}
           </p>
           <p className="mt-1 text-sm text-gray-500">Monto total facturado hoy</p>
         </div>

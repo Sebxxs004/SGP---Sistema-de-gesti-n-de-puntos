@@ -1,3 +1,5 @@
+import { formatCurrency } from '../utils/currency';
+
 export interface TicketLineItem {
   productId: string;
   productName: string;
@@ -20,6 +22,8 @@ export interface TicketData {
     name: string;
     taxId: string;
     thankYouMessage?: string;
+    taxPercentage?: number;
+    currencySymbol?: string;
   };
   branch: {
     id: string;
@@ -42,11 +46,10 @@ interface TicketTemplateProps {
   ticket: TicketData;
 }
 
-const formatMoney = (value: number) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(value);
-
 export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
   const issuedAt = new Date(ticket.issuedAt);
+  const currencySymbol = ticket.company.currencySymbol ?? '$';
+  const taxPercentage = ticket.company.taxPercentage ?? 16;
 
   return (
     <article className="ticket-print-root mx-auto w-[80mm] bg-white px-2 py-2 text-[11px] text-black">
@@ -75,9 +78,9 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
             <div className="flex">
               <span className="flex-1 pr-1">{item.productName}</span>
               <span className="w-10 text-right">{item.quantity}</span>
-              <span className="w-16 text-right">{formatMoney(item.subTotal)}</span>
+              <span className="w-16 text-right">{formatCurrency(item.subTotal, currencySymbol)}</span>
             </div>
-            <div className="text-right text-[9px] text-gray-700">{formatMoney(item.unitPrice)} c/u</div>
+            <div className="text-right text-[9px] text-gray-700">{formatCurrency(item.unitPrice, currencySymbol)} c/u</div>
           </div>
         ))}
       </section>
@@ -85,15 +88,15 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
       <section className="space-y-1 border-b border-dashed border-black py-2 text-[10px]">
         <div className="flex justify-between">
           <span>Subtotal</span>
-          <span>{formatMoney(ticket.subTotal)}</span>
+          <span>{formatCurrency(ticket.subTotal, currencySymbol)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Impuestos</span>
-          <span>{formatMoney(ticket.tax)}</span>
+          <span>Impuestos ({taxPercentage.toFixed(2)}%)</span>
+          <span>{formatCurrency(ticket.tax, currencySymbol)}</span>
         </div>
         <div className="flex justify-between text-[12px] font-bold">
           <span>TOTAL</span>
-          <span>{formatMoney(ticket.total)}</span>
+          <span>{formatCurrency(ticket.total, currencySymbol)}</span>
         </div>
       </section>
 
@@ -102,7 +105,7 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
         {ticket.payments.map((payment, index) => (
           <div key={`${ticket.saleId}-payment-${index}`} className="flex justify-between">
             <span>{payment.method}</span>
-            <span>{formatMoney(payment.amount)}</span>
+            <span>{formatCurrency(payment.amount, currencySymbol)}</span>
           </div>
         ))}
       </section>
