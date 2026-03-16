@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
-import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
 
@@ -16,6 +16,7 @@ export const MainLayout = () => {
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Inventario', href: '/inventory', icon: Package },
     { name: 'POS Ventas', href: '/sales', icon: ShoppingCart },
+    { name: 'Usuarios', href: '/users', icon: Users },
   ];
 
   return (

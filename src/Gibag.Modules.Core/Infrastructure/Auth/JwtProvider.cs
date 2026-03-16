@@ -28,7 +28,7 @@ public class JwtProvider : IJwtProvider
             throw new InvalidOperationException("JWT SecretKey is not configured");
         }
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
@@ -36,6 +36,11 @@ public class JwtProvider : IJwtProvider
             // The user requested to include 'sub' and 'tenant_id'. Adding a few more basics.
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        if (!string.IsNullOrWhiteSpace(user.Role?.Name))
+        {
+            claims.Add(new Claim(ClaimTypes.Role, user.Role.Name));
+        }
 
         var encKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var credentials = new SigningCredentials(encKey, SecurityAlgorithms.HmacSha256);

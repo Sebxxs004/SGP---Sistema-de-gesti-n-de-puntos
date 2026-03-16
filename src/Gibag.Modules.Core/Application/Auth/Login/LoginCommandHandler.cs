@@ -24,6 +24,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginRes
         // por lo que el CoreDbContext filtrará automáticamente la búsqueda al Tenant correcto.
         
         var user = await _dbContext.Users
+            .Include(u => u.Role)
             .Include(u => u.UserBranches)
                 .ThenInclude(ub => ub.Branch)
             .FirstOrDefaultAsync(u => u.Email == request.Email, cancellationToken);

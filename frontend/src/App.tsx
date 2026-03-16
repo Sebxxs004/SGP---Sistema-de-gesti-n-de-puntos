@@ -7,6 +7,7 @@ import { BranchSelector } from './pages/BranchSelector';
 import { Dashboard } from './pages/Dashboard';
 import { Inventory } from './pages/Inventory';
 import { Sales } from './pages/Sales';
+import { Users } from './pages/Users';
 
 // Create a client
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/sales" element={<Sales />} />
+              <Route path="/users" element={<Users />} />
             </Route>
           </Route>
         </Routes>
