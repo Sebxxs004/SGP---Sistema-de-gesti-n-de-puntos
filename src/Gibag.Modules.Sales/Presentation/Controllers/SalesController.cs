@@ -417,6 +417,70 @@ public class SalesController : ControllerBase
         });
     }
 
+    [HttpGet("sessions/history")]
+    public async Task<IActionResult> GetSessionsHistory(CancellationToken cancellationToken)
+    {
+        var currentBranchId = _currentUser.BranchId;
+
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar historial de cajas." }
+            });
+        }
+
+        var sessions = await _dbContext.CashRegisterSessions
+            .AsNoTracking()
+            .Where(s => s.BranchId == currentBranchId.Value && !s.IsOpen && s.ClosedAt != null)
+            .OrderByDescending(s => s.ClosedAt)
+            .Select(s => new
+            {
+                s.Id,
+                s.UserId,
+                s.OpenedAt,
+                s.ClosedAt,
+                s.FinalBalanceExpected,
+                s.FinalBalanceEncounted
+            })
+            .ToListAsync(cancellationToken);
+
+        var userIds = sessions.Select(s => s.UserId).Distinct().ToList();
+
+        var usersById = await _coreDbContext.Users
+            .AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FirstName, u.LastName, u.Email })
+            .ToDictionaryAsync(
+                u => u.Id,
+                u => string.IsNullOrWhiteSpace($"{u.FirstName} {u.LastName}".Trim()) ? u.Email : $"{u.FirstName} {u.LastName}".Trim(),
+                cancellationToken);
+
+        var data = sessions.Select(s =>
+        {
+            var expected = s.FinalBalanceExpected ?? 0m;
+            var counted = s.FinalBalanceEncounted ?? 0m;
+
+            return new
+            {
+                id = s.Id,
+                cashierName = usersById.TryGetValue(s.UserId, out var userName) ? userName : "Usuario desconocido",
+                openedAt = s.OpenedAt,
+                closedAt = s.ClosedAt,
+                expectedAmount = expected,
+                countedAmount = counted,
+                difference = counted - expected
+            };
+        });
+
+        return Ok(new
+        {
+            success = true,
+            data
+        });
+    }
+
     [HttpPost("sessions")]
     public async Task<IActionResult> OpenCashDrawer([FromBody] OpenCashDrawerCommand command)
     {

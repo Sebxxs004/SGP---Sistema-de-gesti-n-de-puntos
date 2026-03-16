@@ -1,4 +1,3 @@
-using Gibag.Modules.Inventory.Application.Products.CreateProduct;
 using Gibag.Modules.Inventory.Application.Stock.AdjustStock;
 using Gibag.Modules.Inventory.Domain;
 using Gibag.Modules.Inventory.Infrastructure;
@@ -46,13 +45,15 @@ public class InventoryController : ControllerBase
 
         var products = await _dbContext.Products
             .AsNoTracking()
-            .Where(p => p.IsActive && p.Category != null && p.Category.IsActive)
+            .Where(p => p.Category != null && p.Category.IsActive)
             .Select(p => new
             {
                 p.Id,
                 p.Name,
                 p.SKU,
                 p.BasePrice,
+                p.CategoryId,
+                p.IsActive,
                 Category = p.Category!.Name
             })
             .ToListAsync(cancellationToken);
@@ -68,8 +69,10 @@ public class InventoryController : ControllerBase
                 p.Id,
                 p.Name,
                 sku = p.SKU,
+                categoryId = p.CategoryId,
                 category = p.Category,
                 price = p.BasePrice,
+                isActive = p.IsActive,
                 stock = stocks.TryGetValue(p.Id, out var quantity) ? quantity : 0m
             })
             .OrderBy(p => p.Name)
@@ -322,11 +325,20 @@ public class InventoryController : ControllerBase
     }
 
     [HttpPost("products")]
-    public async Task<IActionResult> CreateProduct([FromBody] CreateProductCommand command)
+    public async Task<IActionResult> CreateProduct([FromBody] CreateProductRequest request, CancellationToken cancellationToken)
     {
         if (!IsAdmin())
         {
             return Forbid();
+        }
+
+        if (_currentUser.TenantId == null || _currentUser.TenantId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Tenant.Required", message = "Debes enviar X-Tenant-Id para crear productos." }
+            });
         }
 
         if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
@@ -338,19 +350,223 @@ public class InventoryController : ControllerBase
             });
         }
 
-        var result = await _sender.Send(command);
-
-        if (result.IsFailure)
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Sku) || request.BasePrice <= 0 || request.CategoryId == Guid.Empty)
         {
-            return BadRequest(new { 
-                success = false, 
-                error = new { code = result.ErrorCode, message = result.ErrorMessage } 
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.Invalid", message = "Nombre, SKU, Precio base y Categoria son obligatorios." }
             });
         }
 
-        return Created($"/api/v1/inventory/products/{result.Value}", new { 
-            success = true, 
-            data = new { id = result.Value } 
+        var categoryExists = await _dbContext.Categories
+            .AnyAsync(c => c.Id == request.CategoryId && c.IsActive, cancellationToken);
+
+        if (!categoryExists)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Inventory.CategoryNotFound", message = "La categoria especificada no existe o está inactiva." }
+            });
+        }
+
+        var normalizedSku = request.Sku.Trim();
+        var skuExists = await _dbContext.Products
+            .AnyAsync(p => p.SKU.ToLower() == normalizedSku.ToLower(), cancellationToken);
+
+        if (skuExists)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Inventory.SKUExists", message = $"El SKU '{normalizedSku}' ya existe en el inventario." }
+            });
+        }
+
+        var normalizedBarcode = string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim();
+        if (normalizedBarcode != null)
+        {
+            var barcodeExists = await _dbContext.Products
+                .AnyAsync(p => p.Barcode != null && p.Barcode.ToLower() == normalizedBarcode.ToLower(), cancellationToken);
+            if (barcodeExists)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.BarcodeExists", message = $"El codigo de barras '{normalizedBarcode}' ya existe." }
+                });
+            }
+        }
+
+        var product = new Product(
+            _currentUser.TenantId.Value,
+            request.CategoryId,
+            request.Name.Trim(),
+            normalizedSku,
+            normalizedBarcode,
+            request.BasePrice,
+            request.Cost ?? request.BasePrice);
+
+        await _dbContext.Products.AddAsync(product, cancellationToken);
+
+        if (request.InitialStock.HasValue && request.InitialStock.Value > 0)
+        {
+            var branchId = _currentUser.BranchId.Value;
+
+            await _dbContext.BranchStocks.AddAsync(new BranchStock(
+                _currentUser.TenantId.Value,
+                branchId,
+                product.Id,
+                request.InitialStock.Value,
+                0m), cancellationToken);
+
+            var userId = _currentUser.Id ?? Guid.Empty;
+            await _dbContext.StockMovements.AddAsync(new StockMovement(
+                _currentUser.TenantId.Value,
+                branchId,
+                product.Id,
+                userId,
+                MovementType.In,
+                request.InitialStock.Value,
+                "Stock inicial"), cancellationToken);
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Created($"/api/v1/inventory/products/{product.Id}", new
+        {
+            success = true,
+            data = new { id = product.Id }
+        });
+    }
+
+    [HttpPut("products/{id:guid}")]
+    public async Task<IActionResult> UpdateProduct(Guid id, [FromBody] UpdateProductRequest request, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Sku) || request.BasePrice <= 0 || request.CategoryId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.Invalid", message = "Nombre, SKU, Precio base y Categoria son obligatorios." }
+            });
+        }
+
+        var product = await _dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (product == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Inventory.ProductNotFound", message = "Producto no encontrado." }
+            });
+        }
+
+        var categoryExists = await _dbContext.Categories
+            .AnyAsync(c => c.Id == request.CategoryId && c.IsActive, cancellationToken);
+
+        if (!categoryExists)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Inventory.CategoryNotFound", message = "La categoria especificada no existe o está inactiva." }
+            });
+        }
+
+        var normalizedSku = request.Sku.Trim();
+        var duplicateSku = await _dbContext.Products
+            .AnyAsync(p => p.Id != id && p.SKU.ToLower() == normalizedSku.ToLower(), cancellationToken);
+
+        if (duplicateSku)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Inventory.SKUExists", message = $"El SKU '{normalizedSku}' ya existe en el inventario." }
+            });
+        }
+
+        var normalizedBarcode = string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim();
+        if (normalizedBarcode != null)
+        {
+            var duplicateBarcode = await _dbContext.Products
+                .AnyAsync(p => p.Id != id && p.Barcode != null && p.Barcode.ToLower() == normalizedBarcode.ToLower(), cancellationToken);
+
+            if (duplicateBarcode)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.BarcodeExists", message = $"El codigo de barras '{normalizedBarcode}' ya existe." }
+                });
+            }
+        }
+
+        product.Update(
+            request.CategoryId,
+            request.Name.Trim(),
+            normalizedSku,
+            normalizedBarcode,
+            request.BasePrice,
+            request.Cost ?? request.BasePrice);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new { id = product.Id }
+        });
+    }
+
+    [HttpDelete("products/{id:guid}")]
+    public async Task<IActionResult> DeleteProduct(Guid id, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        var product = await _dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (product == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Inventory.ProductNotFound", message = "Producto no encontrado." }
+            });
+        }
+
+        var hasStockOrMovements = await _dbContext.BranchStocks.AnyAsync(bs => bs.ProductId == id && bs.Quantity > 0, cancellationToken)
+            || await _dbContext.StockMovements.AnyAsync(sm => sm.ProductId == id, cancellationToken);
+
+        if (hasStockOrMovements)
+        {
+            product.Deactivate();
+        }
+        else
+        {
+            _dbContext.Products.Remove(product);
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                id,
+                deleted = !hasStockOrMovements,
+                deactivated = hasStockOrMovements
+            }
         });
     }
 
@@ -537,6 +753,25 @@ public sealed record StockMovementListItemDto(
 public sealed record UpsertCategoryRequest(
     string Name,
     string? Description
+);
+
+public sealed record CreateProductRequest(
+    Guid CategoryId,
+    string Name,
+    string Sku,
+    decimal BasePrice,
+    decimal? InitialStock,
+    string? Barcode,
+    decimal? Cost
+);
+
+public sealed record UpdateProductRequest(
+    Guid CategoryId,
+    string Name,
+    string Sku,
+    decimal BasePrice,
+    string? Barcode,
+    decimal? Cost
 );
 
 public sealed record CategoryListItemDto(

@@ -14,6 +14,7 @@ export const MainLayout = () => {
   // Initialize sync hook. It listens to online/offline globally.
   const { isSyncing } = useSyncOfflineSales();
   const { isCatalogSyncing } = useCatalogSync();
+  const activeBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal no seleccionada';
 
   const navigation = isAdmin
     ? [
@@ -107,7 +108,7 @@ export const MainLayout = () => {
               </span>
             )}
             <span className="text-sm font-medium text-gray-700 border-l border-gray-200 pl-4">
-              {user?.email || 'Usuario'}
+              {(user?.email || 'Usuario')} | {activeBranchName}
             </span>
             <button
               onClick={logout}

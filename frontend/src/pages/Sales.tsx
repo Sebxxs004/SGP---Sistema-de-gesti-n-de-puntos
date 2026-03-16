@@ -36,6 +36,21 @@ interface TicketDataResponse {
   data: TicketData;
 }
 
+interface CashSessionHistoryItem {
+  id: string;
+  cashierName: string;
+  openedAt: string;
+  closedAt: string;
+  expectedAmount: number;
+  countedAmount: number;
+  difference: number;
+}
+
+interface CashSessionsHistoryResponse {
+  success: boolean;
+  data: CashSessionHistoryItem[];
+}
+
 interface CartItem {
   id: string; // ProductId
   name: string;
@@ -56,6 +71,9 @@ export const Sales = () => {
   const [lastTicketData, setLastTicketData] = useState<TicketData | null>(null);
   const [ticketToPrint, setTicketToPrint] = useState<TicketData | null>(null);
   const [lastCatalogSyncAt, setLastCatalogSyncAt] = useState<string | null>(null);
+  const [activeSubmodule, setActiveSubmodule] = useState<'pos' | 'cashHistory'>('pos');
+  const [isLoadingCashHistory, setIsLoadingCashHistory] = useState(false);
+  const [cashSessionsHistory, setCashSessionsHistory] = useState<CashSessionHistoryItem[]>([]);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
@@ -283,6 +301,26 @@ export const Sales = () => {
     };
   }, [currentSessionId]);
 
+  const refreshCashSessionsHistory = async () => {
+    setIsLoadingCashHistory(true);
+    try {
+      const response = await apiClient.get<CashSessionsHistoryResponse>('/sales/sessions/history');
+      setCashSessionsHistory(response.data.data ?? []);
+    } catch (error) {
+      console.error('Error loading cash sessions history:', error);
+      setNotification({ message: 'No se pudo cargar el historial de cajas.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsLoadingCashHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubmodule === 'cashHistory') {
+      refreshCashSessionsHistory();
+    }
+  }, [activeSubmodule, currentBranchId]);
+
   const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
     if (!currentBranchId) {
@@ -424,7 +462,85 @@ export const Sales = () => {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-8rem)]">
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-2 text-sm font-medium ${activeSubmodule === 'pos' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+          onClick={() => setActiveSubmodule('pos')}
+        >
+          POS
+        </button>
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-2 text-sm font-medium ${activeSubmodule === 'cashHistory' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+          onClick={() => setActiveSubmodule('cashHistory')}
+        >
+          Historial de Cajas
+        </button>
+      </div>
+
+      {activeSubmodule === 'cashHistory' && (
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 p-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Historial de Cajas</h2>
+              <p className="text-sm text-gray-500">Auditoria de turnos cerrados en la sucursal actual.</p>
+            </div>
+            <button
+              type="button"
+              onClick={refreshCashSessionsHistory}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Actualizar
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[820px] w-full text-left text-sm text-gray-600">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+                <tr>
+                  <th className="px-4 py-3">Cajero</th>
+                  <th className="px-4 py-3">Apertura</th>
+                  <th className="px-4 py-3">Cierre</th>
+                  <th className="px-4 py-3 text-right">Esperado</th>
+                  <th className="px-4 py-3 text-right">Contado</th>
+                  <th className="px-4 py-3 text-right">Diferencia</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {isLoadingCashHistory && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">Cargando historial...</td>
+                  </tr>
+                )}
+
+                {!isLoadingCashHistory && cashSessionsHistory.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">No hay arqueos cerrados para esta sucursal.</td>
+                  </tr>
+                )}
+
+                {!isLoadingCashHistory && cashSessionsHistory.map((session) => (
+                  <tr key={session.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{session.cashierName}</td>
+                    <td className="px-4 py-3">{new Date(session.openedAt).toLocaleString('es-CO')}</td>
+                    <td className="px-4 py-3">{new Date(session.closedAt).toLocaleString('es-CO')}</td>
+                    <td className="px-4 py-3 text-right">{formatMoney(session.expectedAmount)}</td>
+                    <td className="px-4 py-3 text-right">{formatMoney(session.countedAmount)}</td>
+                    <td className={`px-4 py-3 text-right font-semibold ${session.difference >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {formatMoney(session.difference)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeSubmodule === 'pos' && (
+    <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-12rem)]">
       {/* Catalog Section */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
@@ -634,6 +750,8 @@ export const Sales = () => {
         <div className="print-ticket-container">
           <TicketTemplate ticket={ticketToPrint} />
         </div>
+      )}
+    </div>
       )}
     </div>
   );

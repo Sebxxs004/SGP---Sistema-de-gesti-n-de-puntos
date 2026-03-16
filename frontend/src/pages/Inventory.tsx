@@ -10,8 +10,10 @@ type InventoryProduct = {
   id: string;
   name: string;
   sku: string;
+  categoryId: string;
   category: string;
   price: number;
+  isActive: boolean;
   stock: number;
 };
 
@@ -82,9 +84,28 @@ type CategoryForm = {
   description: string;
 };
 
+type ProductForm = {
+  id?: string;
+  name: string;
+  sku: string;
+  categoryId: string;
+  basePrice: string;
+  initialStock: string;
+  barcode: string;
+};
+
 const defaultCategoryForm: CategoryForm = {
   name: '',
   description: '',
+};
+
+const defaultProductForm: ProductForm = {
+  name: '',
+  sku: '',
+  categoryId: '',
+  basePrice: '',
+  initialStock: '0',
+  barcode: '',
 };
 
 const defaultMovementFilters: MovementFilters = {
@@ -109,6 +130,9 @@ export const Inventory = () => {
   const [activeView, setActiveView] = useState<'stock' | 'movements' | 'categories'>('stock');
   const [movementFilters, setMovementFilters] = useState<MovementFilters>(defaultMovementFilters);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(defaultCategoryForm);
+  const [productForm, setProductForm] = useState<ProductForm>(defaultProductForm);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [stockPage, setStockPage] = useState(1);
 
   const stockQuery = useQuery({
     queryKey: ['inventory-stock', currentBranchId],
@@ -222,10 +246,56 @@ export const Inventory = () => {
     },
   });
 
+  const saveProductMutation = useMutation({
+    mutationFn: async (payload: ProductForm) => {
+      const requestBody = {
+        name: payload.name,
+        sku: payload.sku,
+        categoryId: payload.categoryId,
+        basePrice: Number(payload.basePrice),
+        initialStock: Number(payload.initialStock),
+        barcode: payload.barcode || null,
+      };
+
+      if (payload.id) {
+        await apiClient.put(`/inventory/products/${payload.id}`, requestBody);
+        return;
+      }
+
+      await apiClient.post('/inventory/products', requestBody);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory-stock', currentBranchId] });
+      setNotification({ text: 'Producto guardado correctamente.', isError: false });
+      setProductForm(defaultProductForm);
+      setShowProductModal(false);
+    },
+    onError: () => {
+      setNotification({ text: 'No se pudo guardar el producto.', isError: true });
+    },
+  });
+
+  const deleteProductMutation = useMutation({
+    mutationFn: async (productId: string) => {
+      await apiClient.delete(`/inventory/products/${productId}`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory-stock', currentBranchId] });
+      setNotification({ text: 'Producto eliminado/desactivado.', isError: false });
+    },
+    onError: () => {
+      setNotification({ text: 'No se pudo eliminar el producto.', isError: true });
+    },
+  });
+
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const pageSize = 10;
+  const totalStockPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const pagedProducts = filteredProducts.slice((stockPage - 1) * pageSize, stockPage * pageSize);
 
   const movementUsers = useMemo(() => {
     const users = new Map<string, string>();
@@ -291,6 +361,32 @@ export const Inventory = () => {
     await saveCategoryMutation.mutateAsync(categoryForm);
   };
 
+  const openCreateProductModal = () => {
+    setProductForm({
+      ...defaultProductForm,
+      categoryId: (categoriesQuery.data ?? []).find((c) => c.isActive)?.id ?? '',
+    });
+    setShowProductModal(true);
+  };
+
+  const openEditProductModal = (product: InventoryProduct) => {
+    setProductForm({
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      categoryId: product.categoryId,
+      basePrice: String(product.price),
+      initialStock: String(product.stock),
+      barcode: '',
+    });
+    setShowProductModal(true);
+  };
+
+  const submitProduct = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await saveProductMutation.mutateAsync(productForm);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -336,21 +432,37 @@ export const Inventory = () => {
 
       {activeView === 'stock' && (
         <>
-          <div className="relative w-full sm:w-72">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <PackageSearch size={20} className="text-gray-400" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:w-72">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <PackageSearch size={20} className="text-gray-400" />
+              </div>
+              <input
+                type="text"
+                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Buscar por nombre o SKU..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setStockPage(1);
+                }}
+              />
             </div>
-            <input
-              type="text"
-              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="Buscar por nombre o SKU..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+
+            {isAdmin && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                onClick={openCreateProductModal}
+              >
+                <Plus size={14} /> Nuevo Producto
+              </button>
+            )}
           </div>
+
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-gray-600">
+              <table className="min-w-[920px] w-full text-left text-sm text-gray-600">
                 <thead className="bg-gray-50 text-xs uppercase text-gray-700">
                   <tr>
                     <th scope="col" className="px-6 py-4 font-semibold">Producto</th>
@@ -371,7 +483,7 @@ export const Inventory = () => {
                     </tr>
                   )}
 
-                  {!stockQuery.isLoading && filteredProducts.map((product) => (
+                  {!stockQuery.isLoading && pagedProducts.map((product) => (
                     <tr key={product.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 font-medium text-gray-900">{product.name}</td>
                       <td className="px-6 py-4">{product.sku}</td>
@@ -385,7 +497,11 @@ export const Inventory = () => {
                         {product.stock}
                       </td>
                       <td className="px-6 py-4 text-center">
-                        {product.stock > 10 ? (
+                        {!product.isActive ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-700 px-2.5 py-1 text-xs font-medium text-white">
+                            Inactivo
+                          </span>
+                        ) : product.stock > 10 ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
                             <Boxes size={14} /> Normal
                           </span>
@@ -401,14 +517,30 @@ export const Inventory = () => {
                       </td>
                       {isAdmin && (
                         <td className="px-6 py-4 text-center">
-                          <button
-                            type="button"
-                            className="inline-flex items-center rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
-                            title="Ajustar stock"
-                            onClick={() => openAdjustModal(product)}
-                          >
-                            <Plus size={14} />
-                          </button>
+                          <div className="flex justify-center gap-2">
+                            <button
+                              type="button"
+                              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                              onClick={() => openEditProductModal(product)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
+                              onClick={() => deleteProductMutation.mutate(product.id)}
+                            >
+                              Eliminar
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100"
+                              title="Ajustar stock"
+                              onClick={() => openAdjustModal(product)}
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -424,6 +556,29 @@ export const Inventory = () => {
               </table>
             </div>
           </div>
+
+          <div className="flex items-center justify-between rounded-lg bg-white px-4 py-3 text-sm text-gray-600 shadow-sm">
+            <span>Mostrando {pagedProducts.length} de {filteredProducts.length} productos</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={stockPage <= 1}
+                onClick={() => setStockPage((prev) => Math.max(1, prev - 1))}
+                className="rounded-md border border-gray-300 px-3 py-1.5 disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <span>Pagina {stockPage} de {totalStockPages}</span>
+              <button
+                type="button"
+                disabled={stockPage >= totalStockPages}
+                onClick={() => setStockPage((prev) => Math.min(totalStockPages, prev + 1))}
+                className="rounded-md border border-gray-300 px-3 py-1.5 disabled:opacity-50"
+              >
+                Siguiente
+              </button>
+            </div>
+            </div>
         </>
       )}
 
@@ -611,7 +766,8 @@ export const Inventory = () => {
           </form>
 
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <div className="overflow-x-auto">
+            <table className="min-w-[620px] w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-600">
                 <tr>
                   <th className="px-4 py-3 text-left">Categoria</th>
@@ -639,8 +795,8 @@ export const Inventory = () => {
                       <p className="text-xs text-gray-500">{category.description || 'Sin descripcion'}</p>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`rounded-full px-2 py-1 text-xs font-medium ${category.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                        {category.isActive ? 'Activa' : 'Inactiva'}
+                      <span className={`rounded-full px-2 py-1 text-xs font-medium ${category.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-700 text-white'}`}>
+                        {category.isActive ? 'Activa' : 'Inactivo'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -669,6 +825,126 @@ export const Inventory = () => {
                 ))}
               </tbody>
             </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && showProductModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">{productForm.id ? 'Editar Producto' : 'Nuevo Producto'}</h2>
+                <p className="text-sm text-gray-500">Completa los datos del producto para el catálogo.</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
+                onClick={() => {
+                  setShowProductModal(false);
+                  setProductForm(defaultProductForm);
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form className="space-y-4" onSubmit={submitProduct}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Nombre</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">SKU</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.sku}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Categoria</label>
+                  <select
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.categoryId}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, categoryId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecciona categoria</option>
+                    {(categoriesQuery.data ?? []).filter((c) => c.isActive).map((category) => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Precio Base</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.basePrice}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, basePrice: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Stock Inicial (opcional)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.initialStock}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, initialStock: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Codigo de barras (opcional)</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.barcode}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProductModal(false);
+                    setProductForm(defaultProductForm);
+                  }}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saveProductMutation.isPending}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {saveProductMutation.isPending ? 'Guardando...' : 'Guardar producto'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

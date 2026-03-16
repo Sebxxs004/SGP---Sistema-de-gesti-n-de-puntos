@@ -36,4 +36,19 @@ public class Product : TenantEntityBase
         IsActive = true;
         BranchStocks = new List<BranchStock>();
     }
+
+    public void Update(Guid categoryId, string name, string sku, string? barcode, decimal basePrice, decimal cost)
+    {
+        CategoryId = categoryId;
+        Name = name;
+        SKU = sku;
+        Barcode = barcode;
+        BasePrice = basePrice;
+        Cost = cost;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
 }
