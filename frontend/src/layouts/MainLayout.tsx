@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
+import { useCatalogSync } from '../hooks/useCatalogSync';
 
 export const MainLayout = () => {
   const { user, branches, currentBranchId, setCurrentBranchId, logout } = useAuthStore();
@@ -11,6 +12,7 @@ export const MainLayout = () => {
   
   // Initialize sync hook. It listens to online/offline globally.
   const { isSyncing } = useSyncOfflineSales();
+  const { isCatalogSyncing } = useCatalogSync();
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -89,6 +91,11 @@ export const MainLayout = () => {
             {isSyncing && (
               <span className="text-xs font-medium text-blue-600 animate-pulse bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 hidden sm:inline-block">
                 Sincronizando ventas...
+              </span>
+            )}
+            {isCatalogSyncing && (
+              <span className="text-xs font-medium text-indigo-600 animate-pulse bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200 hidden sm:inline-block">
+                Sincronizando catalogo...
               </span>
             )}
             <span className="text-sm font-medium text-gray-700 border-l border-gray-200 pl-4">

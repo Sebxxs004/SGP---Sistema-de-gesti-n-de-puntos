@@ -1,17 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { db } from '../db/db';
 import type { OfflineSale, OfflineSaleDetail, OfflinePayment } from '../db/db';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
-import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi } from 'lucide-react';
+import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw } from 'lucide-react';
 import { CloseCashierModal } from '../components/CloseCashierModal';
-
-// Mocked products for frontend POS logic
-const CATALOG = [
-  { id: '1', sku: 'PRD-001', name: 'Café de Especialidad 500g', price: 12.50 },
-  { id: '2', sku: 'PRD-002', name: 'Taza SGP Pro', price: 8.90 },
-  { id: '3', sku: 'PRD-003', name: 'Leche de Almendras 1L', price: 3.20 },
-];
+import { isAxiosError } from 'axios';
+import { getCatalogLastSyncAt, getCatalogProducts, syncCatalog } from '../services/CatalogSyncService';
+import type { CatalogProduct } from '../db/db';
 
 interface CartItem {
   id: string; // ProductId
@@ -22,9 +18,12 @@ interface CartItem {
 
 export const Sales = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<number>(0); // 0: Cash, 1: CreditCard
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isManualCatalogSyncing, setIsManualCatalogSyncing] = useState(false);
+  const [lastCatalogSyncAt, setLastCatalogSyncAt] = useState<string | null>(null);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
@@ -38,13 +37,44 @@ export const Sales = () => {
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId } = useAuthStore();
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
 
-  const filteredCatalog = CATALOG.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredCatalog = catalog.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const refreshLocalCatalog = async () => {
+    if (!currentBranchId) {
+      setCatalog([]);
+      setLastCatalogSyncAt(null);
+      return;
+    }
+
+    const [products, lastSync] = await Promise.all([
+      getCatalogProducts(currentBranchId),
+      getCatalogLastSyncAt(currentBranchId),
+    ]);
+
+    setCatalog(products);
+    setLastCatalogSyncAt(lastSync);
+  };
+
+  useEffect(() => {
+    refreshLocalCatalog();
+
+    const intervalId = window.setInterval(() => {
+      refreshLocalCatalog();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentBranchId]);
 
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const tax = subTotal * 0.16; // 16% assumed
   const total = subTotal + tax;
 
-  const addToCart = (product: typeof CATALOG[0]) => {
+  const addToCart = (product: CatalogProduct) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
@@ -65,6 +95,30 @@ export const Sales = () => {
   };
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(item => item.id !== id));
+
+  const handleManualCatalogSync = async () => {
+    if (!currentBranchId) {
+      setNotification({ message: 'Selecciona una sucursal activa para sincronizar catálogo.', isError: true });
+      return;
+    }
+
+    setIsManualCatalogSyncing(true);
+
+    try {
+      const result = await syncCatalog(currentBranchId, lastCatalogSyncAt ?? undefined);
+      await refreshLocalCatalog();
+      setNotification({
+        message: `Catálogo sincronizado (${result.productsCount} productos).`,
+        isError: false,
+      });
+    } catch (error) {
+      console.error('Manual catalog sync failed:', error);
+      setNotification({ message: 'No fue posible sincronizar el catálogo.', isError: true });
+    } finally {
+      setIsManualCatalogSyncing(false);
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
 
   const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
@@ -125,16 +179,15 @@ export const Sales = () => {
         shouldClearCart = true;
       }
     } catch (error: unknown) {
-      const axiosError = error as {
-        code?: string;
-        response?: { data?: { error?: { message?: string } } };
-      };
+      const apiErrorMessage =
+        isAxiosError(error) ? error.response?.data?.error?.message : undefined;
 
-      const apiErrorMessage = axiosError.response?.data?.error?.message;
-      const isNetworkFailure = !axiosError.response || axiosError.code === 'ERR_NETWORK';
+      const isNetworkFailure =
+        !navigator.onLine ||
+        (isAxiosError(error) && (!error.response && (error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED')));
 
       // Only fallback to local persistence for real connectivity failures.
-      if (!isOnline || isNetworkFailure) {
+      if (isNetworkFailure) {
         try {
           await db.sales.add(salePayload);
           setNotification({ message: 'Sin conexión o API no disponible. Venta guardada localmente.', isError: false });
@@ -207,6 +260,17 @@ export const Sales = () => {
             >
               Cerrar Turno
             </button>
+            <button
+              type="button"
+              onClick={handleManualCatalogSync}
+              disabled={isManualCatalogSyncing || !currentBranchId}
+              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <RefreshCw size={13} className={isManualCatalogSyncing ? 'animate-spin' : ''} />
+                {isManualCatalogSyncing ? 'Sincronizando...' : 'Sync Catalogo'}
+              </span>
+            </button>
             {isOnline ? (
               <span className="flex items-center gap-2 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full"><Wifi size={14} /> Online</span>
             ) : (
@@ -215,6 +279,9 @@ export const Sales = () => {
           </div>
         </div>
         <div className="p-4 border-b border-gray-100">
+          <p className="mb-2 text-xs text-gray-500">
+            Ultima sync: {lastCatalogSyncAt ? new Date(lastCatalogSyncAt).toLocaleString() : 'Sin sincronizar'}
+          </p>
           <div className="relative">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input 
@@ -237,6 +304,11 @@ export const Sales = () => {
               <span className="text-blue-600 font-bold mt-2">${p.price.toFixed(2)}</span>
             </button>
           ))}
+          {filteredCatalog.length === 0 && (
+            <div className="col-span-full rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
+              No hay productos en caché para esta sucursal. Sincroniza catálogo para habilitar ventas offline.
+            </div>
+          )}
         </div>
       </div>
 
