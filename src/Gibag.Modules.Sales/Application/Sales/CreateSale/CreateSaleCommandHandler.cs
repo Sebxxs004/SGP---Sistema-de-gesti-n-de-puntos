@@ -47,18 +47,18 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             return Result<Guid>.Success(request.Id);
         }
 
-        // Verify session is valid and open
+        // Require an active cash session for the current user and current branch.
         var session = await _dbContext.CashRegisterSessions
-            .FirstOrDefaultAsync(s => s.Id == request.SessionId, cancellationToken);
+            .FirstOrDefaultAsync(s => s.UserId == userId.Value && s.BranchId == request.BranchId && s.IsOpen, cancellationToken);
 
-        if (session == null || !session.IsOpen)
+        if (session == null)
         {
-            return Result<Guid>.Failure("Sales.SessionInvalid", "La caja especificada no existe o está cerrada.");
+            return Result<Guid>.Failure("Sales.NoActiveSession", "No existe una sesión de caja activa para el usuario en esta sucursal.");
         }
 
-        if (session.BranchId != request.BranchId)
+        if (request.SessionId != Guid.Empty && request.SessionId != session.Id)
         {
-            return Result<Guid>.Failure("Sales.BranchMismatch", "La sesión de caja no pertenece a la sucursal activa.");
+            return Result<Guid>.Failure("Sales.SessionMismatch", "La sesión enviada no coincide con la sesión activa del usuario.");
         }
 
         // Verify and reserve stock via Inventory Integration
@@ -93,7 +93,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         var sale = new Sale(
             request.Id,
             tenantId.Value,
-            request.SessionId,
+            session.Id,
             request.BranchId,
             userId.Value,
             request.SubTotal,

@@ -17,6 +17,7 @@ interface AuthState {
   token: string | null;
   tenantId: string | null;
   currentBranchId: string | null;
+  currentSessionId: string | null;
   // Compatibility alias for existing consumers; mirrors currentBranchId.
   branchId: string | null;
   branches: BranchSummary[];
@@ -30,6 +31,7 @@ interface AuthState {
   ) => void;
   setTenantId: (tenantId: string) => void;
   setCurrentBranchId: (branchId: string) => void;
+  setCurrentSessionId: (sessionId: string | null) => void;
   setBranchId: (branchId: string) => void;
   logout: () => void;
 }
@@ -40,20 +42,23 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       tenantId: null,
       currentBranchId: null,
+      currentSessionId: null,
       branchId: null,
       branches: [],
       user: null,
 
       setCredentials: (token, tenantId, user, branches, currentBranchId = null) =>
-        set({ token, tenantId, user, branches, currentBranchId, branchId: currentBranchId }),
+        set({ token, tenantId, user, branches, currentBranchId, currentSessionId: null, branchId: currentBranchId }),
       
       setTenantId: (tenantId) => set({ tenantId }),
 
-      setCurrentBranchId: (currentBranchId) => set({ currentBranchId, branchId: currentBranchId }),
+      setCurrentBranchId: (currentBranchId) => set({ currentBranchId, branchId: currentBranchId, currentSessionId: null }),
+
+      setCurrentSessionId: (currentSessionId) => set({ currentSessionId }),
 
       setBranchId: (branchId) => set({ currentBranchId: branchId, branchId }),
 
-      logout: () => set({ token: null, tenantId: null, currentBranchId: null, branchId: null, branches: [], user: null }),
+      logout: () => set({ token: null, tenantId: null, currentBranchId: null, currentSessionId: null, branchId: null, branches: [], user: null }),
     }),
     {
       name: 'auth-storage', // name of the item in the storage (must be unique)

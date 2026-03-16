@@ -15,7 +15,7 @@ export const MainLayout = () => {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Inventario', href: '/inventory', icon: Package },
-    { name: 'POS Ventas', href: '/sales', icon: ShoppingCart },
+    { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
     { name: 'Usuarios', href: '/users', icon: Users },
   ];
 

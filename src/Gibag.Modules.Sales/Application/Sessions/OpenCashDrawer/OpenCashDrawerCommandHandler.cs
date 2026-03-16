@@ -30,13 +30,13 @@ public class OpenCashDrawerCommandHandler : IRequestHandler<OpenCashDrawerComman
         if (userId == null || userId == Guid.Empty)
             return Result<Guid>.Failure("Auth.UserMissing", "No se encontró el usuario en sesión.");
 
-        // Check if there is already an open session for this branch (and optionally user)
+        // A user cannot open two sessions simultaneously in the same branch.
         bool openSessionExists = await _dbContext.CashRegisterSessions
-            .AnyAsync(s => s.BranchId == request.BranchId && s.IsOpen, cancellationToken);
+            .AnyAsync(s => s.UserId == userId.Value && s.BranchId == request.BranchId && s.IsOpen, cancellationToken);
 
         if (openSessionExists)
         {
-            return Result<Guid>.Failure("Sales.SessionActive", "Ya existe una caja abierta en esta sucursal.");
+            return Result<Guid>.Failure("Sales.SessionActive", "Ya tienes una caja abierta en esta sucursal.");
         }
 
         var session = new CashRegisterSession(

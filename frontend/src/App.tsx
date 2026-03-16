@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './layouts/MainLayout';
@@ -7,6 +7,7 @@ import { BranchSelectorView } from './pages/BranchSelector';
 import { Dashboard } from './pages/Dashboard';
 import { Inventory } from './pages/Inventory';
 import { Sales } from './pages/Sales';
+import { CashOpening } from './pages/CashOpening';
 import { Users } from './pages/Users';
 
 // Create a client
@@ -24,7 +25,9 @@ function App() {
             <Route element={<MainLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
-              <Route path="/sales" element={<Sales />} />
+              <Route path="/pos/open" element={<CashOpening />} />
+              <Route path="/pos" element={<Sales />} />
+              <Route path="/sales" element={<Navigate to="/pos" replace />} />
               <Route path="/users" element={<Users />} />
             </Route>
           </Route>

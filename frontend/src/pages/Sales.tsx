@@ -4,6 +4,7 @@ import type { OfflineSale, OfflineSaleDetail, OfflinePayment } from '../db/db';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
 import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi } from 'lucide-react';
+import { CloseCashierModal } from '../components/CloseCashierModal';
 
 // Mocked products for frontend POS logic
 const CATALOG = [
@@ -25,8 +26,16 @@ export const Sales = () => {
   const [paymentMethod, setPaymentMethod] = useState<number>(0); // 0: Cash, 1: CreditCard
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
+  const [isClosingSession, setIsClosingSession] = useState(false);
+  const [closeSummary, setCloseSummary] = useState<{
+    salesTotal: number;
+    finalBalanceExpected: number;
+    finalBalanceEncounted: number;
+    difference: number;
+  } | null>(null);
   
-  const { tenantId, currentBranchId } = useAuthStore();
+  const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId } = useAuthStore();
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
 
   const filteredCatalog = CATALOG.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -63,6 +72,10 @@ export const Sales = () => {
       setNotification({ message: 'Selecciona una sucursal activa antes de vender.', isError: true });
       return;
     }
+    if (!currentSessionId) {
+      setNotification({ message: 'No tienes una sesión de caja activa para vender.', isError: true });
+      return;
+    }
 
     setIsProcessing(true);
     setNotification(null);
@@ -70,7 +83,7 @@ export const Sales = () => {
     // Frontend generates the ID to ensure idempotency across offline/online
     const saleId = crypto.randomUUID();
     const branchId = currentBranchId;
-    const sessionId = '22222222-2222-2222-2222-222222222222'; // Mocked Session
+    const sessionId = currentSessionId;
 
     const details: OfflineSaleDetail[] = cart.map(item => ({
       id: crypto.randomUUID(),
@@ -126,17 +139,64 @@ export const Sales = () => {
     }
   };
 
+  const handleCloseSession = async (finalBalanceEncounted: number) => {
+    setIsClosingSession(true);
+    setNotification(null);
+
+    try {
+      const response = await apiClient.post('/sales/sessions/close', {
+        branchId: '00000000-0000-0000-0000-000000000000',
+        finalBalanceEncounted,
+      });
+
+      const payload = (response.data as {
+        data?: {
+          salesTotal: number;
+          finalBalanceExpected: number;
+          finalBalanceEncounted: number;
+          difference: number;
+        };
+      }).data;
+
+      if (payload) {
+        setCloseSummary(payload);
+      }
+
+      setCurrentSessionId(null);
+      setIsCloseModalOpen(false);
+      setNotification({ message: 'Caja cerrada correctamente.', isError: false });
+    } catch (error: unknown) {
+      const message =
+        typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message
+          : undefined;
+
+      setNotification({ message: message ?? 'No fue posible cerrar la caja.', isError: true });
+    } finally {
+      setIsClosingSession(false);
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-8rem)]">
       {/* Catalog Section */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-800">Catálogo</h2>
-          {isOnline ? (
-            <span className="flex items-center gap-2 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full"><Wifi size={14} /> Online</span>
-          ) : (
-            <span className="flex items-center gap-2 text-xs font-medium text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full"><WifiOff size={14} /> Offline Mode</span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsCloseModalOpen(true)}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+            >
+              Cerrar Turno
+            </button>
+            {isOnline ? (
+              <span className="flex items-center gap-2 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full"><Wifi size={14} /> Online</span>
+            ) : (
+              <span className="flex items-center gap-2 text-xs font-medium text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full"><WifiOff size={14} /> Offline Mode</span>
+            )}
+          </div>
         </div>
         <div className="p-4 border-b border-gray-100">
           <div className="relative">
@@ -224,6 +284,16 @@ export const Sales = () => {
             </div>
           )}
 
+          {closeSummary && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              <p className="font-semibold">Resumen de Arqueo</p>
+              <p>Ventas totales: ${closeSummary.salesTotal.toFixed(2)}</p>
+              <p>Esperado: ${closeSummary.finalBalanceExpected.toFixed(2)}</p>
+              <p>Contado: ${closeSummary.finalBalanceEncounted.toFixed(2)}</p>
+              <p>Diferencia: ${closeSummary.difference.toFixed(2)}</p>
+            </div>
+          )}
+
           <button 
             disabled={cart.length === 0 || isProcessing}
             onClick={handleFinalizeSale}
@@ -233,6 +303,14 @@ export const Sales = () => {
           </button>
         </div>
       </div>
+
+      {isCloseModalOpen && (
+        <CloseCashierModal
+          isLoading={isClosingSession}
+          onClose={() => setIsCloseModalOpen(false)}
+          onSubmit={handleCloseSession}
+        />
+      )}
     </div>
   );
 };

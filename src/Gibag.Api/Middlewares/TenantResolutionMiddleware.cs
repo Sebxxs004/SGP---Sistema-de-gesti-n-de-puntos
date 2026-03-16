@@ -27,13 +27,19 @@ public class TenantResolutionMiddleware
             currentContext.SetCurrentTenantId(tenantId);
         }
 
-        var userIdClaim = context.User.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub || c.Type == "sub")?.Value;
+        var userIdClaim = context.User.Claims.FirstOrDefault(c =>
+            c.Type == JwtRegisteredClaimNames.Sub ||
+            c.Type == "sub" ||
+            c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (Guid.TryParse(userIdClaim, out var userId))
         {
             currentContext.Id = userId;
         }
 
-        currentContext.Email = context.User.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Email || c.Type == "email")?.Value;
+        currentContext.Email = context.User.Claims.FirstOrDefault(c =>
+            c.Type == JwtRegisteredClaimNames.Email ||
+            c.Type == "email" ||
+            c.Type == System.Security.Claims.ClaimTypes.Email)?.Value;
         currentContext.Role = context.User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Role || c.Type == "role")?.Value;
 
         var branchIdString = context.Request.Headers["X-Branch-Id"].FirstOrDefault();
