@@ -30,7 +30,7 @@ public class AuthController : ControllerBase
 
         return Ok(new { 
             success = true, 
-            data = new { token = result.Value } 
+            data = result.Value
         });
     }
 }

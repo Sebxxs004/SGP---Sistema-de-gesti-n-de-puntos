@@ -4,6 +4,25 @@ import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
 import { Building2, Lock, Mail } from 'lucide-react';
 
+interface LoginBranch {
+  id: string;
+  name: string;
+  isPrimary: boolean;
+}
+
+interface LoginResponseData {
+  token: string;
+  userId: string;
+  email: string;
+  defaultBranchId: string | null;
+  branches: LoginBranch[];
+}
+
+interface LoginApiResponse {
+  success: boolean;
+  data: LoginResponseData;
+}
+
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,20 +46,30 @@ export const Login = () => {
         { headers: { 'X-Tenant-Id': tenantId } }
       );
 
-      const token = response.data.data.token;
-      
-      // We simulate decoding or getting the User info if it was returned
-      // Since our endpoint returns just the token, we decode or fake the user context
-      const user = { id: "user-uuid", email }; 
+      const payload = (response.data as LoginApiResponse).data;
+
+      const token = payload.token;
+      const user = { id: payload.userId, email: payload.email };
+      const branches = payload.branches;
+      const defaultBranchId = payload.defaultBranchId;
       
       // Save globally
-      setCredentials(token, tenantId, user);
+      setCredentials(token, tenantId, user, branches, defaultBranchId);
       
-      navigate('/');
-    } catch (err: any) {
+      if (defaultBranchId) {
+        navigate('/');
+      } else {
+        navigate('/select-branch');
+      }
+    } catch (err: unknown) {
+      const errorMessage =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message
+          : undefined;
+
       console.error("Login failed", err);
       setError(
-        err.response?.data?.error?.message || 
+        errorMessage ||
         "Error al iniciar sesión. Verifica tus credenciales o el Tenant."
       );
     } finally {

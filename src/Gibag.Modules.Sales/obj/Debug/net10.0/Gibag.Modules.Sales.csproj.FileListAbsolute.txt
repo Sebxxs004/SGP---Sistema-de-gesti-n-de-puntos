@@ -14,3 +14,5 @@ C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Giba
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\refint\Gibag.Modules.Sales.dll
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.pdb
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\ref\Gibag.Modules.Sales.dll
+C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Sales.runtimeconfig.json
+C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.genruntimeconfig.cache

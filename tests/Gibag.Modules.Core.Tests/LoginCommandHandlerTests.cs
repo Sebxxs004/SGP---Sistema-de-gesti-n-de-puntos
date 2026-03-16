@@ -32,10 +32,17 @@ public class LoginCommandHandlerTests
 
         using (var context = new CoreDbContext(options, tenantServiceMock.Object))
         {
+            var branch = new Branch(tenantId, "Central", "Main Street", "America/Bogota");
+            context.Branches.Add(branch);
+
             var role = new Role(tenantId, "Admin", "[]");
             context.Roles.Add(role);
             var user = new User(tenantId, role.Id, "test@test.com", correctPasswordHash, "Test", "User");
             context.Users.Add(user);
+
+            var userBranch = new UserBranch(tenantId, user.Id, branch.Id, true);
+            context.UserBranches.Add(userBranch);
+
             await context.SaveChangesAsync();
         }
 
