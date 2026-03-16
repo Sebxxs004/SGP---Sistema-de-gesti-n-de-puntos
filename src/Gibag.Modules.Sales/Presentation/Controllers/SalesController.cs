@@ -3,6 +3,7 @@ using Gibag.Modules.Sales.Application.Sessions.CloseCashDrawer;
 using Gibag.Modules.Sales.Application.Sessions.OpenCashDrawer;
 using Gibag.Modules.Sales.Domain;
 using Gibag.Modules.Sales.Infrastructure;
+using Gibag.Modules.Core.Infrastructure;
 using Gibag.Modules.Inventory.Infrastructure;
 using Gibag.Shared.Interfaces;
 using MediatR;
@@ -19,17 +20,145 @@ public class SalesController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly SalesDbContext _dbContext;
     private readonly InventoryDbContext _inventoryDbContext;
+    private readonly CoreDbContext _coreDbContext;
 
     public SalesController(
         ISender sender,
         ICurrentUser currentUser,
         SalesDbContext dbContext,
-        InventoryDbContext inventoryDbContext)
+        InventoryDbContext inventoryDbContext,
+        CoreDbContext coreDbContext)
     {
         _sender = sender;
         _currentUser = currentUser;
         _dbContext = dbContext;
         _inventoryDbContext = inventoryDbContext;
+        _coreDbContext = coreDbContext;
+    }
+
+    [HttpGet("{id:guid}/ticket-data")]
+    public async Task<IActionResult> GetTicketData(Guid id, CancellationToken cancellationToken)
+    {
+        var currentBranchId = _currentUser.BranchId;
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar comprobantes." }
+            });
+        }
+
+        var saleData = await _dbContext.Sales
+            .AsNoTracking()
+            .Where(s => s.Id == id && s.BranchId == currentBranchId.Value)
+            .Select(s => new
+            {
+                s.Id,
+                s.TenantId,
+                s.BranchId,
+                s.UserId,
+                s.CreatedAt,
+                s.SubTotal,
+                s.Tax,
+                s.Total,
+                Details = s.Details.Select(d => new
+                {
+                    d.ProductId,
+                    d.Quantity,
+                    d.UnitPrice,
+                    d.SubTotal
+                }).ToList(),
+                Payments = s.Payments.Select(p => new
+                {
+                    Method = p.Method,
+                    p.Amount
+                }).ToList()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (saleData == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Sale.NotFound", message = "No se encontró la venta solicitada para esta sucursal." }
+            });
+        }
+
+        var productIds = saleData.Details.Select(d => d.ProductId).Distinct().ToList();
+        var productNames = await _inventoryDbContext.Products
+            .AsNoTracking()
+            .Where(p => productIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.Name, cancellationToken);
+
+        var tenant = await _coreDbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == saleData.TenantId)
+            .Select(t => new
+            {
+                t.Id,
+                t.Name,
+                t.TaxId
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var branch = await _coreDbContext.Branches
+            .AsNoTracking()
+            .Where(b => b.Id == saleData.BranchId)
+            .Select(b => new
+            {
+                b.Id,
+                b.Name,
+                b.Address
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                saleId = saleData.Id,
+                ticketNumber = saleData.Id.ToString()[..8].ToUpperInvariant(),
+                issuedAt = saleData.CreatedAt,
+                company = new
+                {
+                    id = tenant?.Id ?? saleData.TenantId,
+                    name = tenant?.Name ?? "SGP",
+                    taxId = tenant?.TaxId ?? "N/A"
+                },
+                branch = new
+                {
+                    id = branch?.Id ?? saleData.BranchId,
+                    name = branch?.Name ?? "Sucursal",
+                    address = branch?.Address ?? ""
+                },
+                cashier = new
+                {
+                    id = saleData.UserId,
+                    email = _currentUser.Email ?? "cajero@sgp.local"
+                },
+                items = saleData.Details.Select(d => new
+                {
+                    productId = d.ProductId,
+                    productName = productNames.TryGetValue(d.ProductId, out var name)
+                        ? name
+                        : $"Producto {d.ProductId.ToString()[..8]}",
+                    quantity = d.Quantity,
+                    unitPrice = d.UnitPrice,
+                    subTotal = d.SubTotal
+                }),
+                payments = saleData.Payments.Select(p => new
+                {
+                    method = p.Method.ToString(),
+                    amount = p.Amount
+                }),
+                subTotal = saleData.SubTotal,
+                tax = saleData.Tax,
+                total = saleData.Total
+            }
+        });
     }
 
     [HttpGet("stats/summary")]

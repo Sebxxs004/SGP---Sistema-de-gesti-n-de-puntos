@@ -3,11 +3,13 @@ import { db } from '../db/db';
 import type { OfflineSale, OfflineSaleDetail, OfflinePayment } from '../db/db';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
-import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw } from 'lucide-react';
+import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw, Printer } from 'lucide-react';
 import { CloseCashierModal } from '../components/CloseCashierModal';
 import { isAxiosError } from 'axios';
 import { getCatalogLastSyncAt, getCatalogProducts, syncCatalog } from '../services/CatalogSyncService';
 import type { CatalogProduct } from '../db/db';
+import { TicketTemplate } from '../components/TicketTemplate';
+import type { TicketData, TicketLineItem, TicketPayment } from '../components/TicketTemplate';
 
 interface SessionSaleHistoryItem {
   id: string;
@@ -27,6 +29,11 @@ interface SessionSalesHistoryResponse {
   };
 }
 
+interface TicketDataResponse {
+  success: boolean;
+  data: TicketData;
+}
+
 interface CartItem {
   id: string; // ProductId
   name: string;
@@ -42,7 +49,10 @@ export const Sales = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isManualCatalogSyncing, setIsManualCatalogSyncing] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isFetchingTicket, setIsFetchingTicket] = useState(false);
   const [sessionSalesHistory, setSessionSalesHistory] = useState<SessionSaleHistoryItem[]>([]);
+  const [lastTicketData, setLastTicketData] = useState<TicketData | null>(null);
+  const [ticketToPrint, setTicketToPrint] = useState<TicketData | null>(null);
   const [lastCatalogSyncAt, setLastCatalogSyncAt] = useState<string | null>(null);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
@@ -54,8 +64,20 @@ export const Sales = () => {
     difference: number;
   } | null>(null);
   
-  const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId } = useAuthStore();
+  const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
+  const currentBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal';
+
+  useEffect(() => {
+    const onAfterPrint = () => {
+      setTicketToPrint(null);
+    };
+
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', onAfterPrint);
+    };
+  }, []);
 
   const filteredCatalog = catalog.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -96,6 +118,87 @@ export const Sales = () => {
 
   const formatMoney = (value: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(value);
+
+  const buildLocalTicketData = (
+    saleId: string,
+    createdAt: string,
+    details: OfflineSaleDetail[],
+    payments: OfflinePayment[],
+    saleSubTotal: number,
+    saleTax: number,
+    saleTotal: number
+  ): TicketData => {
+    const detailsByProduct = new Map(details.map((detail) => [detail.productId, detail]));
+
+    const items: TicketLineItem[] = cart
+      .filter((item) => detailsByProduct.has(item.id))
+      .map((item) => {
+        const detail = detailsByProduct.get(item.id)!;
+        return {
+          productId: item.id,
+          productName: item.name,
+          quantity: detail.quantity,
+          unitPrice: detail.unitPrice,
+          subTotal: detail.quantity * detail.unitPrice,
+        };
+      });
+
+    const normalizedPayments: TicketPayment[] = payments.map((payment) => ({
+      method: payment.method === 0 ? 'Cash' : 'CreditCard',
+      amount: payment.amount,
+    }));
+
+    return {
+      saleId,
+      ticketNumber: saleId.slice(0, 8).toUpperCase(),
+      issuedAt: createdAt,
+      company: {
+        id: tenantId ?? 'N/A',
+        name: 'SGP',
+        taxId: 'N/A',
+      },
+      branch: {
+        id: currentBranchId ?? 'N/A',
+        name: currentBranchName,
+        address: '',
+      },
+      cashier: {
+        id: user?.id ?? 'N/A',
+        email: user?.email ?? 'cajero@sgp.local',
+      },
+      items,
+      payments: normalizedPayments,
+      subTotal: saleSubTotal,
+      tax: saleTax,
+      total: saleTotal,
+    };
+  };
+
+  const fetchTicketData = async (saleId: string): Promise<TicketData> => {
+    const response = await apiClient.get<TicketDataResponse>(`/sales/${saleId}/ticket-data`);
+    return response.data.data;
+  };
+
+  const printTicket = (ticket: TicketData) => {
+    setTicketToPrint(ticket);
+    window.setTimeout(() => {
+      window.print();
+    }, 80);
+  };
+
+  const handleReprintFromHistory = async (saleId: string) => {
+    setIsFetchingTicket(true);
+    try {
+      const ticket = await fetchTicketData(saleId);
+      printTicket(ticket);
+    } catch (error) {
+      console.error('Error fetching ticket data:', error);
+      setNotification({ message: 'No se pudo recuperar el comprobante para reimpresion.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsFetchingTicket(false);
+    }
+  };
 
   const addToCart = (product: CatalogProduct) => {
     setCart(prev => {
@@ -222,11 +325,21 @@ export const Sales = () => {
     try {
       // Try API first when online
       if (isOnline) {
-        await apiClient.post('/sales', salePayload);
+        const response = await apiClient.post<{ success: boolean; data?: { id?: string } }>('/sales', salePayload);
+        const registeredSaleId = response.data?.data?.id ?? saleId;
+
+        try {
+          const ticket = await fetchTicketData(registeredSaleId);
+          setLastTicketData(ticket);
+        } catch {
+          setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, tax, total));
+        }
+
         setNotification({ message: 'Venta procesada exitosamente.', isError: false });
         shouldClearCart = true;
       } else {
         await db.sales.add(salePayload);
+        setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, tax, total));
         setNotification({ message: 'Sin conexión. Venta guardada localmente.', isError: false });
         shouldClearCart = true;
       }
@@ -242,6 +355,7 @@ export const Sales = () => {
       if (isNetworkFailure) {
         try {
           await db.sales.add(salePayload);
+          setLastTicketData(buildLocalTicketData(saleId, salePayload.createdAt, details, payments, subTotal, tax, total));
           setNotification({ message: 'Sin conexión o API no disponible. Venta guardada localmente.', isError: false });
           shouldClearCart = true;
         } catch (dbError) {
@@ -380,15 +494,37 @@ export const Sales = () => {
               {isLoadingHistory && <span className="text-xs text-blue-600">Actualizando...</span>}
             </div>
             {sessionSalesHistory.length > 0 ? (
-              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
-                {sessionSalesHistory.map((sale) => (
-                  <div key={sale.id} className="rounded-md border border-gray-100 bg-gray-50 px-2 py-2 text-xs">
-                    <p className="font-semibold text-gray-700">Ticket {sale.id.slice(0, 8)}</p>
-                    <p className="text-gray-500">{new Date(sale.createdAt).toLocaleString()}</p>
-                    <p className="text-gray-700">Items: {sale.items}</p>
-                    <p className="font-semibold text-gray-800">Total: {formatMoney(sale.total)}</p>
-                  </div>
-                ))}
+              <div className="max-h-44 overflow-y-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500">
+                      <th className="py-1">Ticket</th>
+                      <th className="py-1">Hora</th>
+                      <th className="py-1 text-right">Total</th>
+                      <th className="py-1 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionSalesHistory.map((sale) => (
+                      <tr key={sale.id} className="border-b border-gray-100 text-gray-700">
+                        <td className="py-1.5 font-medium">{sale.id.slice(0, 8)}</td>
+                        <td className="py-1.5">{new Date(sale.createdAt).toLocaleTimeString()}</td>
+                        <td className="py-1.5 text-right font-semibold">{formatMoney(sale.total)}</td>
+                        <td className="py-1.5 text-center">
+                          <button
+                            type="button"
+                            title="Reimprimir ticket"
+                            disabled={isFetchingTicket}
+                            onClick={() => handleReprintFromHistory(sale.id)}
+                            className="inline-flex items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Printer size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <p className="text-xs text-gray-500">No hay ventas registradas en esta sesión.</p>
@@ -465,6 +601,16 @@ export const Sales = () => {
           >
             {isProcessing ? 'Procesando...' : 'Finalizar Venta'}
           </button>
+
+          {lastTicketData && (
+            <button
+              type="button"
+              onClick={() => printTicket(lastTicketData)}
+              className="w-full rounded-xl border border-blue-300 bg-white py-2.5 font-semibold text-blue-700 transition-all hover:bg-blue-50"
+            >
+              Imprimir Ticket
+            </button>
+          )}
         </div>
       </div>
 
@@ -474,6 +620,12 @@ export const Sales = () => {
           onClose={() => setIsCloseModalOpen(false)}
           onSubmit={handleCloseSession}
         />
+      )}
+
+      {ticketToPrint && (
+        <div className="print-ticket-container">
+          <TicketTemplate ticket={ticketToPrint} />
+        </div>
       )}
     </div>
   );

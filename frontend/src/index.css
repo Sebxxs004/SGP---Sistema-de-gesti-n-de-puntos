@@ -15,3 +15,35 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: #f3f4f6;
 }
+
+.print-ticket-container {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-ticket-container,
+  .print-ticket-container * {
+    visibility: visible !important;
+  }
+
+  .print-ticket-container {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+  }
+}

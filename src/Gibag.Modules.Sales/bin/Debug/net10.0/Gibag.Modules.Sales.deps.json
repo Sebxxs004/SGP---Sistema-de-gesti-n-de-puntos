@@ -9,6 +9,7 @@
       "Gibag.Modules.Sales/1.0.0": {
         "dependencies": {
           "FluentValidation.DependencyInjectionExtensions": "12.1.1",
+          "Gibag.Modules.Core": "1.0.0",
           "Gibag.Modules.Inventory": "1.0.0",
           "Gibag.Shared": "1.0.0",
           "MediatR": "14.1.0",
