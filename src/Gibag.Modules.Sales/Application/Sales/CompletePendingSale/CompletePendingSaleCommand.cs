@@ -7,6 +7,7 @@ namespace Gibag.Modules.Sales.Application.Sales.CompletePendingSale;
 public record CompletePendingSaleCommand(
     Guid SaleId,
     Guid BranchId,
+    Guid? CustomerId,
     decimal Discount,
     List<CreateSaleDetailDto> Details,
     List<CreateSalePaymentDto> Payments

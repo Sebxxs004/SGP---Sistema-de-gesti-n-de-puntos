@@ -55,6 +55,18 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         if (tenantConfig == null)
             return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
 
+        if (request.CustomerId.HasValue)
+        {
+            var customerExists = await _coreDbContext.Customers
+                .AsNoTracking()
+                .AnyAsync(c => c.Id == request.CustomerId.Value && c.IsActive, cancellationToken);
+
+            if (!customerExists)
+            {
+                return Result<Guid>.Failure("Customer.NotFound", "El cliente seleccionado no existe o está inactivo.");
+            }
+        }
+
         var existingSale = await _dbContext.Sales
             .Include(s => s.Details)
             .Include(s => s.Payments)
@@ -122,6 +134,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             request.SubTotal,
             request.Tax,
             request.Total,
+            request.CustomerId,
             request.Discount,
             targetStatus,
             request.CreatedAt
@@ -184,6 +197,18 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         if (tenantConfig == null)
             return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
 
+        if (request.CustomerId.HasValue)
+        {
+            var customerExists = await _coreDbContext.Customers
+                .AsNoTracking()
+                .AnyAsync(c => c.Id == request.CustomerId.Value && c.IsActive, cancellationToken);
+
+            if (!customerExists)
+            {
+                return Result<Guid>.Failure("Customer.NotFound", "El cliente seleccionado no existe o está inactivo.");
+            }
+        }
+
         var userId = _currentUser.Id;
         if (userId == null || userId == Guid.Empty)
             return Result<Guid>.Failure("Auth.UserMissing", "No se encontró el usuario en sesión para actualizar la venta en espera.");
@@ -223,6 +248,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         var totalCalculated = subTotalAfterDiscount + taxCalculated;
 
         sale.UpdateFinancials(subTotalCalculated, taxCalculated, totalCalculated, request.Discount);
+        sale.AssignCustomer(request.CustomerId);
         sale.MarkAsPending();
 
         await _dbContext.SaveChangesAsync(cancellationToken);

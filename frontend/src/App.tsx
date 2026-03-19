@@ -11,6 +11,7 @@ import { Sales } from './pages/Sales';
 import { CashOpening } from './pages/CashOpening';
 import { Users } from './pages/Users';
 import { Settings } from './pages/Settings';
+import { Customers } from './pages/Customers';
 
 // Create a client
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ function App() {
               <Route path="/sales" element={<Navigate to="/pos" replace />} />
               <Route element={<RoleGuard allowedRoles={["Admin"]} />}>
                 <Route path="/users" element={<Users />} />
+                <Route path="/customers" element={<Customers />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
             </Route>

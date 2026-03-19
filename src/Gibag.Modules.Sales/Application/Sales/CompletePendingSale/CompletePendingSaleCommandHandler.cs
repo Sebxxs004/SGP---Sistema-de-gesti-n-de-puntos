@@ -51,6 +51,16 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
         if (tenantConfig == null)
             return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
 
+        if (request.CustomerId.HasValue)
+        {
+            var customerExists = await _coreDbContext.Customers
+                .AsNoTracking()
+                .AnyAsync(c => c.Id == request.CustomerId.Value && c.IsActive, cancellationToken);
+
+            if (!customerExists)
+                return Result<Guid>.Failure("Customer.NotFound", "El cliente seleccionado no existe o está inactivo.");
+        }
+
         var session = await _dbContext.CashRegisterSessions
             .FirstOrDefaultAsync(s => s.UserId == userId.Value && s.BranchId == request.BranchId && s.IsOpen, cancellationToken);
 
@@ -111,6 +121,7 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
         var totalCalculated = subTotalAfterDiscount + taxCalculated;
 
         sale.UpdateFinancials(subTotalCalculated, taxCalculated, totalCalculated, request.Discount);
+        sale.AssignCustomer(request.CustomerId);
         sale.MarkAsCompleted();
 
         await _dbContext.SaveChangesAsync(cancellationToken);

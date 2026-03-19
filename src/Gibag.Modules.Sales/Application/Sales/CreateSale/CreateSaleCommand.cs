@@ -11,6 +11,7 @@ public record CreateSaleCommand(
     decimal SubTotal,
     decimal Tax,
     decimal Total,
+    Guid? CustomerId,
     decimal Discount, // Total discount (percentage or fixed amount calculated on frontend)
     SaleStatus? Status,
     DateTimeOffset? CreatedAt,

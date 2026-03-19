@@ -11,6 +11,9 @@ public class CreateSaleCommandValidator : AbstractValidator<CreateSaleCommand>
         RuleFor(x => x.BranchId).NotEmpty().WithMessage("La sucursal es obligatoria.");
         RuleFor(x => x.Total).GreaterThanOrEqualTo(0).WithMessage("El total no puede ser negativo.");
         RuleFor(x => x.Discount).GreaterThanOrEqualTo(0).WithMessage("El descuento no puede ser negativo.");
+        RuleFor(x => x.CustomerId)
+            .Must(customerId => customerId == null || customerId != Guid.Empty)
+            .WithMessage("El cliente seleccionado no es válido.");
 
         RuleFor(x => x.Details).NotEmpty().WithMessage("La venta debe tener al menos un detalle.");
         RuleForEach(x => x.Details).ChildRules(detail => 

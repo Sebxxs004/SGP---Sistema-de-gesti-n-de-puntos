@@ -35,6 +35,9 @@ public class SalesDbContext : DbContext
         // Constraints and indexes
         modelBuilder.Entity<Sale>()
             .HasIndex(s => new { s.TenantId, s.SessionId });
+
+        modelBuilder.Entity<Sale>()
+            .HasIndex(s => new { s.TenantId, s.CustomerId });
             
         modelBuilder.Entity<CashRegisterSession>()
             .HasIndex(crs => new { crs.TenantId, crs.BranchId });

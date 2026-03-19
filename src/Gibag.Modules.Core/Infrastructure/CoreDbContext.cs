@@ -20,6 +20,7 @@ public class CoreDbContext : DbContext
     public DbSet<Role> Roles { get; set; } = null!;
     public DbSet<User> Users { get; set; } = null!;
     public DbSet<UserBranch> UserBranches { get; set; } = null!;
+    public DbSet<Customer> Customers { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +32,7 @@ public class CoreDbContext : DbContext
         modelBuilder.Entity<Role>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<User>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<UserBranch>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
+        modelBuilder.Entity<Customer>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
 
         // Specific rules from db-core.md
         
@@ -38,6 +40,12 @@ public class CoreDbContext : DbContext
         modelBuilder.Entity<User>()
             .HasIndex(u => new { u.TenantId, u.Email })
             .IsUnique();
+
+        modelBuilder.Entity<Customer>()
+            .HasIndex(c => new { c.TenantId, c.IsActive, c.Name });
+
+        modelBuilder.Entity<Customer>()
+            .HasIndex(c => new { c.TenantId, c.DocumentNumber });
     }
 
     public override int SaveChanges()

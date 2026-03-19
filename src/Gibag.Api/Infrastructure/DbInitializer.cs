@@ -58,6 +58,30 @@ public static class DbInitializer
                 ADD COLUMN IF NOT EXISTS ""CurrencySymbol"" text NOT NULL DEFAULT '$';
             ");
 
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""Customers"" (
+                    ""Id"" uuid NOT NULL,
+                    ""TenantId"" uuid NOT NULL,
+                    ""Name"" text NOT NULL,
+                    ""DocumentNumber"" text NULL,
+                    ""Email"" text NULL,
+                    ""Phone"" text NULL,
+                    ""Address"" text NULL,
+                    ""IsActive"" boolean NOT NULL DEFAULT true,
+                    CONSTRAINT ""PK_Customers"" PRIMARY KEY (""Id"")
+                );
+            ");
+
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                CREATE INDEX IF NOT EXISTS ""IX_Customers_TenantId_IsActive_Name""
+                ON ""Customers"" (""TenantId"", ""IsActive"", ""Name"");
+            ");
+
+            await coreDb.Database.ExecuteSqlRawAsync(@"
+                CREATE INDEX IF NOT EXISTS ""IX_Customers_TenantId_DocumentNumber""
+                ON ""Customers"" (""TenantId"", ""DocumentNumber"");
+            ");
+
             await salesDb.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""Sales""
                 ADD COLUMN IF NOT EXISTS ""Discount"" numeric NOT NULL DEFAULT 0;
@@ -71,6 +95,16 @@ public static class DbInitializer
             await salesDb.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""Sales""
                 ADD COLUMN IF NOT EXISTS ""Status"" integer NOT NULL DEFAULT 1;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Sales""
+                ADD COLUMN IF NOT EXISTS ""CustomerId"" uuid NULL;
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                CREATE INDEX IF NOT EXISTS ""IX_Sales_TenantId_CustomerId""
+                ON ""Sales"" (""TenantId"", ""CustomerId"");
             ");
 
             await salesDb.Database.ExecuteSqlRawAsync(@"

@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { db } from '../db/db';
 import type { OfflineSale, OfflineSaleDetail, OfflinePayment } from '../db/db';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
-import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw, Printer, PauseCircle, Clock3, Play } from 'lucide-react';
+import { Search, Plus, Minus, CreditCard, Banknote, Trash2, WifiOff, Wifi, RefreshCw, Printer, Pause, Clock3, Play, UserPlus, X, Percent } from 'lucide-react';
 import { CloseCashierModal } from '../components/CloseCashierModal';
 import { isAxiosError } from 'axios';
 import { getCatalogLastSyncAt, getCatalogProducts, syncCatalog } from '../services/CatalogSyncService';
 import type { CatalogProduct } from '../db/db';
-import { TicketTemplate } from '../components/TicketTemplate';
 import type { TicketData, TicketLineItem, TicketPayment } from '../components/TicketTemplate';
 import { useCompanySettings } from '../hooks/useCompanySettings';
 import { formatCurrency } from '../utils/currency';
@@ -28,6 +28,12 @@ interface SessionSaleHistoryItem {
 
 type SaleWorkflowStatus = 'Pending' | 'Completed' | 'Refunded';
 
+const saleStatusToApiValue: Record<SaleWorkflowStatus, number> = {
+  Pending: 0,
+  Completed: 1,
+  Refunded: 2,
+};
+
 interface RefundData {
   saleId: string;
   showModal: boolean;
@@ -44,6 +50,9 @@ interface PendingSaleTicket {
   tenantId: string;
   sessionId: string;
   branchId: string;
+  customerId?: string;
+  customerName?: string;
+  customerDocumentNumber?: string;
   subTotal: number;
   tax: number;
   total: number;
@@ -114,6 +123,12 @@ interface PendingSaleApiResponse {
     id: string;
     sessionId: string;
     branchId: string;
+    customerId?: string;
+    customer?: {
+      id: string;
+      name: string;
+      documentNumber?: string;
+    } | null;
     createdAt: string;
     subTotal: number;
     discount: number;
@@ -129,12 +144,183 @@ interface PendingSaleApiResponse {
   }>;
 }
 
+interface ActiveSessionResponse {
+  success: boolean;
+  data: {
+    id: string;
+  } | null;
+}
+
 interface CartItem {
   id: string; // ProductId
   name: string;
   price: number;
   quantity: number;
 }
+
+interface CustomerSummary {
+  id: string;
+  name: string;
+  documentNumber?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  isActive: boolean;
+}
+
+interface CustomersSearchResponse {
+  success: boolean;
+  data: {
+    items: CustomerSummary[];
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+interface QuickCustomerForm {
+  name: string;
+  documentNumber: string;
+  email: string;
+  phone: string;
+  address: string;
+}
+
+interface ApiErrorPayload {
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
+const getApiErrorNotificationMessage = (error: unknown, fallback: string) => {
+  if (!isAxiosError(error)) {
+    return fallback;
+  }
+
+  const errorPayload = error.response?.data as ApiErrorPayload | undefined;
+  const code = errorPayload?.error?.code;
+  const message = errorPayload?.error?.message;
+
+  if (code && message) {
+    return `${message} (${code})`;
+  }
+
+  return message ?? fallback;
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const renderTicketHtml = (ticket: TicketData) => {
+  const currencySymbol = ticket.company.currencySymbol ?? '$';
+  const taxPercentage = ticket.company.taxPercentage ?? 16;
+  const issuedAt = new Date(ticket.issuedAt).toLocaleString('es-CO');
+
+  const itemsHtml = ticket.items
+    .map(
+      (item) => `
+      <tr>
+        <td>${escapeHtml(item.productName)}</td>
+        <td style="text-align:right">${item.quantity}</td>
+        <td style="text-align:right">${escapeHtml(formatCurrency(item.subTotal, currencySymbol))}</td>
+      </tr>
+      <tr>
+        <td colspan="3" style="text-align:right;color:#6b7280;font-size:10px;">${escapeHtml(formatCurrency(item.unitPrice, currencySymbol))} c/u</td>
+      </tr>
+    `,
+    )
+    .join('');
+
+  const paymentsHtml = ticket.payments
+    .map(
+      (payment) => `
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <span>${escapeHtml(payment.method)}</span>
+        <span>${escapeHtml(formatCurrency(payment.amount, currencySymbol))}</span>
+      </div>
+    `,
+    )
+    .join('');
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ticket ${escapeHtml(ticket.ticketNumber)}</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body { font-family: Arial, sans-serif; color: #000; font-size: 11px; }
+    .ticket { width: 72mm; margin: 0 auto; }
+    .center { text-align: center; }
+    .divider { border-bottom: 1px dashed #111; margin: 8px 0; }
+    h1 { margin: 0; font-size: 14px; }
+    p { margin: 2px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    td { padding: 2px 0; vertical-align: top; }
+    .totals div { display: flex; justify-content: space-between; margin: 2px 0; }
+    .total { font-size: 12px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <article class="ticket">
+    <header class="center">
+      <h1>${escapeHtml(ticket.company.name || 'SGP')}</h1>
+      <p>NIT: ${escapeHtml(ticket.company.taxId || 'N/A')}</p>
+      <p>Sucursal: ${escapeHtml(ticket.branch.name)}</p>
+      ${ticket.branch.address ? `<p>${escapeHtml(ticket.branch.address)}</p>` : ''}
+      ${ticket.branch.phone ? `<p>Tel: ${escapeHtml(ticket.branch.phone)}</p>` : ''}
+      ${ticket.customer?.name ? `<p>Cliente: ${escapeHtml(ticket.customer.name)}</p>` : ''}
+      ${ticket.customer?.documentNumber ? `<p>Doc: ${escapeHtml(ticket.customer.documentNumber)}</p>` : ''}
+    </header>
+    <div class="divider"></div>
+    <section>
+      <p>Ticket: ${escapeHtml(ticket.ticketNumber)}</p>
+      <p>Fecha: ${escapeHtml(issuedAt)}</p>
+      <p>Cajero: ${escapeHtml(ticket.cashier.email)}</p>
+    </section>
+    <div class="divider"></div>
+    <section>
+      <table>
+        <thead>
+          <tr>
+            <td><strong>Producto</strong></td>
+            <td style="text-align:right"><strong>Cant</strong></td>
+            <td style="text-align:right"><strong>Total</strong></td>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+    </section>
+    <div class="divider"></div>
+    <section class="totals">
+      <div><span>Subtotal</span><span>${escapeHtml(formatCurrency(ticket.subTotal, currencySymbol))}</span></div>
+      ${ticket.discount && ticket.discount > 0 ? `<div><span>Descuento</span><span>-${escapeHtml(formatCurrency(ticket.discount, currencySymbol))}</span></div>` : ''}
+      <div><span>Impuestos (${taxPercentage.toFixed(2)}%)</span><span>${escapeHtml(formatCurrency(ticket.tax, currencySymbol))}</span></div>
+      <div class="total"><span>TOTAL</span><span>${escapeHtml(formatCurrency(ticket.total, currencySymbol))}</span></div>
+    </section>
+    <div class="divider"></div>
+    <section>
+      <p><strong>Pagos</strong></p>
+      ${paymentsHtml}
+    </section>
+    <div class="divider"></div>
+    <footer class="center">
+      <p>${escapeHtml(ticket.company.thankYouMessage || 'Gracias por su compra')}</p>
+      <p>Sistema SGP</p>
+    </footer>
+  </article>
+</body>
+</html>`;
+};
 
 export const Sales = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -147,9 +333,7 @@ export const Sales = () => {
   const [isFetchingTicket, setIsFetchingTicket] = useState(false);
   const [sessionSalesHistory, setSessionSalesHistory] = useState<SessionSaleHistoryItem[]>([]);
   const [lastTicketData, setLastTicketData] = useState<TicketData | null>(null);
-  const [ticketToPrint, setTicketToPrint] = useState<TicketData | null>(null);
   const [lastCatalogSyncAt, setLastCatalogSyncAt] = useState<string | null>(null);
-  const [activeSubmodule, setActiveSubmodule] = useState<'pos' | 'cashHistory'>('pos');
   const [isLoadingCashHistory, setIsLoadingCashHistory] = useState(false);
   const [cashSessionsHistory, setCashSessionsHistory] = useState<CashSessionHistoryItem[]>([]);
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
@@ -170,24 +354,29 @@ export const Sales = () => {
   const [isLoadingPendingSales, setIsLoadingPendingSales] = useState(false);
   const [isPendingDrawerOpen, setIsPendingDrawerOpen] = useState(false);
   const [activeHeldSaleId, setActiveHeldSaleId] = useState<string | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSummary | null>(null);
+  const [isCustomerSelectorOpen, setIsCustomerSelectorOpen] = useState(false);
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+  const [customerOptions, setCustomerOptions] = useState<CustomerSummary[]>([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+  const [isQuickCustomerModalOpen, setIsQuickCustomerModalOpen] = useState(false);
+  const [isCreatingQuickCustomer, setIsCreatingQuickCustomer] = useState(false);
+  const [quickCustomerForm, setQuickCustomerForm] = useState<QuickCustomerForm>({
+    name: '',
+    documentNumber: '',
+    email: '',
+    phone: '',
+    address: '',
+  });
   
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
+  const [searchParams] = useSearchParams();
+  const activeSubmodule: 'pos' | 'cashHistory' = searchParams.get('tab') === 'cash' ? 'cashHistory' : 'pos';
   const companySettingsQuery = useCompanySettings();
   const taxPercentage = companySettingsQuery.data?.taxPercentage ?? 16;
   const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
   const currentBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal';
-
-  useEffect(() => {
-    const onAfterPrint = () => {
-      setTicketToPrint(null);
-    };
-
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => {
-      window.removeEventListener('afterprint', onAfterPrint);
-    };
-  }, []);
 
   const filteredCatalog = catalog.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -222,6 +411,20 @@ export const Sales = () => {
     };
   }, [currentBranchId]);
 
+  useEffect(() => {
+    if (!isCustomerSelectorOpen) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      loadCustomers(customerSearchTerm);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isCustomerSelectorOpen, customerSearchTerm]);
+
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const discountAmount = discountType === 'percentage' ? (subTotal * discount) / 100 : discount;
   const subTotalAfterDiscount = Math.max(subTotal - discountAmount, 0);
@@ -229,6 +432,69 @@ export const Sales = () => {
   const total = subTotalAfterDiscount + tax;
 
   const formatMoney = (value: number) => formatCurrency(value, currencySymbol);
+
+  const resetQuickCustomerForm = () => {
+    setQuickCustomerForm({
+      name: '',
+      documentNumber: '',
+      email: '',
+      phone: '',
+      address: '',
+    });
+  };
+
+  const loadCustomers = async (search: string) => {
+    setIsLoadingCustomers(true);
+    try {
+      const response = await apiClient.get<CustomersSearchResponse>('/customers', {
+        params: {
+          page: 1,
+          pageSize: 12,
+          search: search.trim() || undefined,
+        },
+      });
+
+      setCustomerOptions(response.data.data.items ?? []);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      setCustomerOptions([]);
+    } finally {
+      setIsLoadingCustomers(false);
+    }
+  };
+
+  const handleCreateQuickCustomer = async () => {
+    if (!quickCustomerForm.name.trim()) {
+      setNotification({ message: 'El nombre del cliente es obligatorio.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    setIsCreatingQuickCustomer(true);
+    try {
+      const response = await apiClient.post<{ success: boolean; data: CustomerSummary }>('/customers', {
+        name: quickCustomerForm.name,
+        documentNumber: quickCustomerForm.documentNumber || undefined,
+        email: quickCustomerForm.email || undefined,
+        phone: quickCustomerForm.phone || undefined,
+        address: quickCustomerForm.address || undefined,
+      });
+
+      const createdCustomer = response.data.data;
+      setSelectedCustomer(createdCustomer);
+      setIsQuickCustomerModalOpen(false);
+      resetQuickCustomerForm();
+      setNotification({ message: 'Cliente creado y seleccionado en la venta.', isError: false });
+      setTimeout(() => setNotification(null), 4000);
+      await loadCustomers(createdCustomer.name);
+    } catch (error) {
+      const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+      setNotification({ message: apiErrorMessage ?? 'No se pudo crear el cliente.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsCreatingQuickCustomer(false);
+    }
+  };
 
   const buildSaleDetails = (): OfflineSaleDetail[] => cart.map(item => ({
     id: crypto.randomUUID(),
@@ -244,11 +510,15 @@ export const Sales = () => {
     details: OfflineSaleDetail[],
     payments: OfflinePayment[],
     createdAt = new Date().toISOString(),
+    sessionIdOverride?: string,
   ): OfflineSale => ({
     id: saleId,
     tenantId: tenantId || '',
-    sessionId: currentSessionId || '',
+    sessionId: sessionIdOverride ?? currentSessionId ?? '',
     branchId: currentBranchId || '',
+    customerId: selectedCustomer?.id,
+    customerName: selectedCustomer?.name,
+    customerDocumentNumber: selectedCustomer?.documentNumber,
     subTotal,
     tax,
     total,
@@ -266,6 +536,9 @@ export const Sales = () => {
     tenantId: sale.tenantId,
     sessionId: sale.sessionId,
     branchId: sale.branchId,
+    customerId: sale.customerId,
+    customerName: sale.customerName,
+    customerDocumentNumber: sale.customerDocumentNumber,
     subTotal: sale.subTotal,
     tax: sale.tax,
     total: sale.total,
@@ -343,6 +616,13 @@ export const Sales = () => {
         id: user?.id ?? 'N/A',
         email: user?.email ?? 'cajero@sgp.local',
       },
+      customer: selectedCustomer
+        ? {
+            id: selectedCustomer.id,
+            name: selectedCustomer.name,
+            documentNumber: selectedCustomer.documentNumber,
+          }
+        : null,
       items,
       payments: normalizedPayments,
       subTotal: saleSubTotal,
@@ -357,11 +637,60 @@ export const Sales = () => {
     return response.data.data;
   };
 
+  const ensureActiveSessionId = async (): Promise<string | null> => {
+    if (!currentBranchId) {
+      setCurrentSessionId(null);
+      return null;
+    }
+
+    try {
+      const response = await apiClient.get<ActiveSessionResponse>('/sales/sessions/active');
+      const activeSessionId = response.data.data?.id ?? null;
+      const storedSessionId = useAuthStore.getState().currentSessionId;
+
+      if (storedSessionId !== activeSessionId) {
+        setCurrentSessionId(activeSessionId);
+      }
+
+      return activeSessionId;
+    } catch (error) {
+      console.error('Error checking active session:', error);
+      return useAuthStore.getState().currentSessionId;
+    }
+  };
+
   const printTicket = (ticket: TicketData) => {
-    setTicketToPrint(ticket);
-    window.setTimeout(() => {
-      window.print();
-    }, 80);
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.position = 'fixed';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    frame.style.border = '0';
+
+    const cleanup = () => {
+      window.setTimeout(() => {
+        frame.remove();
+      }, 500);
+    };
+
+    frame.onload = () => {
+      const printWindow = frame.contentWindow;
+      if (!printWindow) {
+        setNotification({ message: 'No se pudo inicializar la ventana de impresion.', isError: true });
+        setTimeout(() => setNotification(null), 4000);
+        cleanup();
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+      cleanup();
+    };
+
+    frame.srcdoc = renderTicketHtml(ticket);
+    document.body.appendChild(frame);
   };
 
   const handleReprintFromHistory = async (saleId: string) => {
@@ -442,6 +771,9 @@ export const Sales = () => {
             tenantId: tenantId || '',
             sessionId: sale.sessionId,
             branchId: sale.branchId,
+            customerId: sale.customerId,
+            customerName: sale.customer?.name,
+            customerDocumentNumber: sale.customer?.documentNumber,
             subTotal: sale.subTotal,
             tax: sale.tax,
             total: sale.total,
@@ -511,6 +843,18 @@ export const Sales = () => {
   }, [currentSessionId]);
 
   useEffect(() => {
+    ensureActiveSessionId();
+
+    const intervalId = window.setInterval(() => {
+      ensureActiveSessionId();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentBranchId]);
+
+  useEffect(() => {
     refreshPendingSales();
 
     const intervalId = window.setInterval(() => {
@@ -548,7 +892,9 @@ export const Sales = () => {
       setNotification({ message: 'Selecciona una sucursal activa antes de vender.', isError: true });
       return;
     }
-    if (!currentSessionId) {
+    const activeSessionId = await ensureActiveSessionId();
+
+    if (!activeSessionId) {
       setNotification({ message: 'No tienes una sesion de caja activa para vender.', isError: true });
       return;
     }
@@ -567,19 +913,20 @@ export const Sales = () => {
       method: paymentMethod
     }];
 
-    const salePayload = buildSalePayload(saleId, 'Completed', details, payments, existingHeldSale?.createdAt);
+    const salePayload = buildSalePayload(saleId, 'Completed', details, payments, existingHeldSale?.createdAt, activeSessionId);
 
     try {
       if (isOnline) {
         const response = activeHeldSaleId && existingHeldSale?.isSynced
           ? await apiClient.post<{ success: boolean; data?: { id?: string } }>(`/sales/${saleId}/complete`, {
+              customerId: selectedCustomer?.id,
               discount: discountAmount,
               details,
               payments,
             })
           : await apiClient.post<{ success: boolean; data?: { id?: string } }>('/sales', {
               ...salePayload,
-              status: 'Completed',
+              status: saleStatusToApiValue.Completed,
             });
 
         const registeredSaleId = response.data?.data?.id ?? saleId;
@@ -610,8 +957,7 @@ export const Sales = () => {
         shouldClearCart = true;
       }
     } catch (error: unknown) {
-      const apiErrorMessage =
-        isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+      const apiErrorMessage = getApiErrorNotificationMessage(error, 'No fue posible procesar la venta.');
 
       const isNetworkFailure =
         !navigator.onLine ||
@@ -635,7 +981,7 @@ export const Sales = () => {
           setNotification({ message: 'No se pudo procesar ni guardar localmente la venta.', isError: true });
         }
       } else {
-        setNotification({ message: apiErrorMessage ?? 'No fue posible procesar la venta.', isError: true });
+        setNotification({ message: apiErrorMessage, isError: true });
       }
     } finally {
       setIsProcessing(false);
@@ -644,6 +990,7 @@ export const Sales = () => {
         setDiscount(0);
         setDiscountType('fixed');
         setActiveHeldSaleId(null);
+        setSelectedCustomer(null);
       }
       if (shouldClearCart) {
         refreshSessionHistory();
@@ -658,7 +1005,9 @@ export const Sales = () => {
       return;
     }
 
-    if (!currentBranchId || !currentSessionId) {
+    const activeSessionId = await ensureActiveSessionId();
+
+    if (!currentBranchId || !activeSessionId) {
       setNotification({ message: 'Necesitas una sesion activa para poner ventas en espera.', isError: true });
       setTimeout(() => setNotification(null), 4000);
       return;
@@ -669,13 +1018,20 @@ export const Sales = () => {
 
     const saleId = activeHeldSaleId ?? crypto.randomUUID();
     const details = buildSaleDetails();
-    const salePayload = buildSalePayload(saleId, 'Pending', details, [], activeHeldSaleId ? pendingSales.find((sale) => sale.id === activeHeldSaleId)?.createdAt : undefined);
+    const salePayload = buildSalePayload(
+      saleId,
+      'Pending',
+      details,
+      [],
+      activeHeldSaleId ? pendingSales.find((sale) => sale.id === activeHeldSaleId)?.createdAt : undefined,
+      activeSessionId,
+    );
 
     try {
       if (isOnline) {
         await apiClient.post('/sales', {
           ...salePayload,
-          status: 'Pending',
+          status: saleStatusToApiValue.Pending,
         });
 
         await db.sales.put({
@@ -699,6 +1055,7 @@ export const Sales = () => {
       setDiscount(0);
       setDiscountType('fixed');
       setActiveHeldSaleId(null);
+      setSelectedCustomer(null);
       setNotification({ message: 'Venta enviada a espera.', isError: false });
       await refreshPendingSales();
       setTimeout(() => setNotification(null), 4000);
@@ -719,12 +1076,13 @@ export const Sales = () => {
         setDiscount(0);
         setDiscountType('fixed');
         setActiveHeldSaleId(null);
+        setSelectedCustomer(null);
         setNotification({ message: 'Sin conexion. Ticket guardado en espera local.', isError: false });
         await refreshPendingSales();
         setTimeout(() => setNotification(null), 4000);
       } else {
-        const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
-        setNotification({ message: apiErrorMessage ?? 'No fue posible poner la venta en espera.', isError: true });
+        const apiErrorMessage = getApiErrorNotificationMessage(error, 'No fue posible poner la venta en espera.');
+        setNotification({ message: apiErrorMessage, isError: true });
         setTimeout(() => setNotification(null), 4000);
       }
     } finally {
@@ -737,6 +1095,16 @@ export const Sales = () => {
     setDiscount(sale.discount);
     setDiscountType('fixed');
     setActiveHeldSaleId(sale.id);
+    setSelectedCustomer(
+      sale.customerId
+        ? {
+            id: sale.customerId,
+            name: sale.customerName ?? 'Cliente',
+            documentNumber: sale.customerDocumentNumber,
+            isActive: true,
+          }
+        : null,
+    );
     setIsPendingDrawerOpen(false);
     setNotification({ message: `Ticket ${sale.id.slice(0, 8)} cargado en el carrito.`, isError: false });
     setTimeout(() => setNotification(null), 3000);
@@ -866,87 +1234,154 @@ export const Sales = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className={`rounded-lg px-3 py-2 text-sm font-medium ${activeSubmodule === 'pos' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
-          onClick={() => setActiveSubmodule('pos')}
-        >
-          POS
-        </button>
-        <button
-          type="button"
-          className={`rounded-lg px-3 py-2 text-sm font-medium ${activeSubmodule === 'cashHistory' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
-          onClick={() => setActiveSubmodule('cashHistory')}
-        >
-          Historial de Cajas
-        </button>
-      </div>
-
+    <div className="flex h-full flex-col gap-4">
       {activeSubmodule === 'cashHistory' && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 p-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Historial de Cajas</h2>
-              <p className="text-sm text-gray-500">Auditoria de turnos cerrados en la sucursal actual.</p>
+        <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-100 p-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Historial de Cajas</h2>
+                <p className="text-sm text-gray-500">Auditoria de turnos cerrados en la sucursal actual.</p>
+              </div>
+              <button
+                type="button"
+                onClick={refreshCashSessionsHistory}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Actualizar
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={refreshCashSessionsHistory}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              Actualizar
-            </button>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-[820px] w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+                  <tr>
+                    <th className="px-4 py-3">Cajero</th>
+                    <th className="px-4 py-3">Apertura</th>
+                    <th className="px-4 py-3">Cierre</th>
+                    <th className="px-4 py-3 text-right">Esperado</th>
+                    <th className="px-4 py-3 text-right">Contado</th>
+                    <th className="px-4 py-3 text-right">Diferencia</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {isLoadingCashHistory && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-gray-500">Cargando historial...</td>
+                    </tr>
+                  )}
+
+                  {!isLoadingCashHistory && cashSessionsHistory.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-gray-500">No hay arqueos cerrados para esta sucursal.</td>
+                    </tr>
+                  )}
+
+                  {!isLoadingCashHistory && cashSessionsHistory.map((session) => (
+                    <tr key={session.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{session.cashierName}</td>
+                      <td className="px-4 py-3">{new Date(session.openedAt).toLocaleString('es-CO')}</td>
+                      <td className="px-4 py-3">{new Date(session.closedAt).toLocaleString('es-CO')}</td>
+                      <td className="px-4 py-3 text-right">{formatMoney(session.expectedAmount)}</td>
+                      <td className="px-4 py-3 text-right">{formatMoney(session.countedAmount)}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${session.difference >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {formatMoney(session.difference)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-[820px] w-full text-left text-sm text-gray-600">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-700">
-                <tr>
-                  <th className="px-4 py-3">Cajero</th>
-                  <th className="px-4 py-3">Apertura</th>
-                  <th className="px-4 py-3">Cierre</th>
-                  <th className="px-4 py-3 text-right">Esperado</th>
-                  <th className="px-4 py-3 text-right">Contado</th>
-                  <th className="px-4 py-3 text-right">Diferencia</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {isLoadingCashHistory && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">Cargando historial...</td>
-                  </tr>
-                )}
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-100 p-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Historial de Ventas</h2>
+                <p className="text-sm text-gray-500">Ventas de la sesion activa para esta sucursal.</p>
+              </div>
+              <button
+                type="button"
+                onClick={refreshSessionHistory}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Actualizar
+              </button>
+            </div>
 
-                {!isLoadingCashHistory && cashSessionsHistory.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">No hay arqueos cerrados para esta sucursal.</td>
-                  </tr>
-                )}
+            <div className="max-h-[32rem] space-y-2 overflow-y-auto p-4">
+              {isLoadingHistory && (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
+                  Cargando ventas...
+                </div>
+              )}
 
-                {!isLoadingCashHistory && cashSessionsHistory.map((session) => (
-                  <tr key={session.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{session.cashierName}</td>
-                    <td className="px-4 py-3">{new Date(session.openedAt).toLocaleString('es-CO')}</td>
-                    <td className="px-4 py-3">{new Date(session.closedAt).toLocaleString('es-CO')}</td>
-                    <td className="px-4 py-3 text-right">{formatMoney(session.expectedAmount)}</td>
-                    <td className="px-4 py-3 text-right">{formatMoney(session.countedAmount)}</td>
-                    <td className={`px-4 py-3 text-right font-semibold ${session.difference >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {formatMoney(session.difference)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              {!isLoadingHistory && sessionSalesHistory.length === 0 && (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
+                  No hay ventas registradas en la sesion activa.
+                </div>
+              )}
+
+              {!isLoadingHistory && sessionSalesHistory.map((sale) => (
+                <div key={sale.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Ticket {sale.id.slice(0, 8)}</p>
+                      <p className="text-xs text-gray-500">{new Date(sale.createdAt).toLocaleString('es-CO')}</p>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900">
+                      {(sale.isRefunded || refundedSales.has(sale.id)) ? (
+                        <span className="text-red-600 line-through">{formatMoney(sale.total)}</span>
+                      ) : (
+                        formatMoney(sale.total)
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                      {sale.items} item(s)
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        title="Reimprimir ticket"
+                        disabled={isFetchingTicket}
+                        onClick={() => handleReprintFromHistory(sale.id)}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Printer size={14} />
+                      </button>
+
+                      {(sale.isRefunded || refundedSales.has(sale.id)) ? (
+                        <span className="rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                          Devuelto
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Devolver venta"
+                          disabled={isProcessingRefund}
+                          onClick={() => setRefundData({ saleId: sale.id, showModal: true })}
+                          className="inline-flex items-center justify-center rounded-md border border-red-200 bg-red-50 p-1.5 text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {activeSubmodule === 'pos' && (
-    <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-12rem)]">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
       {/* Catalog Section */}
-      <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="flex min-h-[24rem] flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:min-h-0 lg:basis-[68%]">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-800">Catalogo</h2>
           <div className="flex items-center gap-2">
@@ -1043,7 +1478,7 @@ export const Sales = () => {
       </div>
 
       {/* Cart & Checkout Section */}
-      <div className="w-full lg:w-96 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="flex min-h-[28rem] w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:min-h-0 lg:min-w-[30rem] lg:basis-[32%]">
         <div className="p-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-800">Ticket de Venta</h2>
           {activeHeldSaleId && (
@@ -1051,93 +1486,131 @@ export const Sales = () => {
               Editando ticket en espera <span className="font-semibold">{activeHeldSaleId.slice(0, 8)}</span>
             </div>
           )}
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">Historial de Ventas (Sesion)</h3>
-              {isLoadingHistory && <span className="text-xs text-blue-600">Actualizando...</span>}
-            </div>
-            {sessionSalesHistory.length > 0 ? (
-              <div className="max-h-44 overflow-y-auto">
-                <table className="w-full border-collapse text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-gray-500">
-                      <th className="py-1">Ticket</th>
-                      <th className="py-1">Hora</th>
-                      <th className="py-1 text-right">Total</th>
-                      <th className="py-1 text-center">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessionSalesHistory.map((sale) => (
-                      <tr key={sale.id} className="border-b border-gray-100 text-gray-700">
-                        <td className="py-1.5 font-medium">{sale.id.slice(0, 8)}</td>
-                        <td className="py-1.5">{new Date(sale.createdAt).toLocaleTimeString()}</td>
-                        <td className="py-1.5 text-right font-semibold">
-                          {(sale.isRefunded || refundedSales.has(sale.id)) ? (
-                            <span className="line-through text-red-600">{formatMoney(sale.total)}</span>
-                          ) : (
-                            formatMoney(sale.total)
-                          )}
-                        </td>
-                        <td className="py-1.5 text-center">
-                          <button
-                            type="button"
-                            title="Reimprimir ticket"
-                            disabled={isFetchingTicket}
-                            onClick={() => handleReprintFromHistory(sale.id)}
-                            className="inline-flex items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <Printer size={14} />
-                          </button>
-                          {(sale.isRefunded || refundedSales.has(sale.id)) ? (
-                            <span className="ml-2 inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-red-700 bg-red-100">
-                              Devuelto
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              title="Devolver venta"
-                              disabled={isProcessingRefund}
-                              onClick={() => setRefundData({ saleId: sale.id, showModal: true })}
-                              className="ml-2 inline-flex items-center justify-center rounded-md border border-red-200 bg-red-50 p-1.5 text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500">No hay ventas registradas en esta sesion.</p>
-            )}
-          </div>
 
-          {cart.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-              El carrito esta vacio
-            </div>
-          ) : cart.map(item => (
-            <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800 line-clamp-1">{item.name}</p>
-                <p className="text-xs text-blue-600 font-semibold">{formatMoney(item.price)}</p>
+          <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Cliente de la venta</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {selectedCustomer?.name ?? 'Consumidor Final'}
+                </p>
+                {selectedCustomer?.documentNumber && (
+                  <p className="text-xs text-gray-600">Doc: {selectedCustomer.documentNumber}</p>
+                )}
               </div>
-              <div className="flex items-center bg-white rounded-md border border-gray-200 shadow-sm">
-                <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:bg-gray-100 text-gray-500"><Minus size={14}/></button>
-                <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:bg-gray-100 text-gray-500"><Plus size={14}/></button>
-              </div>
-              <button onClick={() => removeFromCart(item.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-md">
-                <Trash2 size={16} />
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomerSelectorOpen((prev) => !prev);
+                  setCustomerSearchTerm('');
+                }}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Buscar / Cambiar
               </button>
             </div>
-          ))}
+
+            {isCustomerSelectorOpen && (
+              <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={customerSearchTerm}
+                    onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                    placeholder="Buscar por nombre o documento"
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50">
+                  {isLoadingCustomers && (
+                    <p className="p-3 text-sm text-gray-500">Buscando clientes...</p>
+                  )}
+
+                  {!isLoadingCustomers && customerOptions.length === 0 && (
+                    <p className="p-3 text-sm text-gray-500">Sin resultados. Crea un cliente rápido.</p>
+                  )}
+
+                  {!isLoadingCustomers && customerOptions.map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCustomer(customer);
+                        setIsCustomerSelectorOpen(false);
+                      }}
+                      className="w-full border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-white"
+                    >
+                      <p className="font-medium text-gray-900">{customer.name}</p>
+                      <p className="text-xs text-gray-500">{customer.documentNumber || 'Sin documento'}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCustomer(null);
+                      setIsCustomerSelectorOpen(false);
+                    }}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Consumidor Final
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsQuickCustomerModalOpen(true);
+                      setIsCustomerSelectorOpen(false);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                  >
+                    <UserPlus size={13} />
+                    Nuevo Cliente
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex flex-1 min-h-0 flex-col p-4">
+          <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-gray-200 bg-white">
+            <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+              <h3 className="text-sm font-semibold text-gray-700">Items del Ticket</h3>
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                {cart.length}
+              </span>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              {cart.length === 0 ? (
+                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+                  El carrito esta vacio
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {cart.map(item => (
+                    <div key={item.id} className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                      <div className="flex-1">
+                        <p className="line-clamp-1 text-sm font-medium text-gray-800">{item.name}</p>
+                        <p className="text-xs font-semibold text-blue-600">{formatMoney(item.price)}</p>
+                      </div>
+                      <div className="flex items-center rounded-md border border-gray-200 bg-white shadow-sm">
+                        <button onClick={() => updateQuantity(item.id, -1)} className="p-1 text-gray-500 hover:bg-gray-100"><Minus size={14}/></button>
+                        <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+                        <button onClick={() => updateQuantity(item.id, 1)} className="p-1 text-gray-500 hover:bg-gray-100"><Plus size={14}/></button>
+                      </div>
+                      <button onClick={() => removeFromCart(item.id)} className="rounded-md p-1.5 text-red-500 hover:bg-red-50">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Totals & Actions */}
@@ -1156,25 +1629,31 @@ export const Sales = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-             <button
-                onClick={() => setShowDiscountModal(true)}
-                className="py-2 px-3 rounded-lg text-sm font-medium bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 transition-all"
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                {paymentMethod === 0 ? <Banknote size={16} /> : <CreditCard size={16} />}
+              </div>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(Number(e.target.value))}
+                className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm font-medium text-gray-700 outline-none transition-all focus:border-blue-500"
+                aria-label="Forma de pago"
               >
-               Aplicar Descuento
-             </button>
-             <button 
-                onClick={() => setPaymentMethod(0)}
-                className={`py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all ${paymentMethod === 0 ? 'bg-blue-100 text-blue-700 border-2 border-blue-500' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}
-              >
-               <Banknote size={16}/> Efectivo
-             </button>
-             <button 
-                onClick={() => setPaymentMethod(1)}
-                className={`py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all ${paymentMethod === 1 ? 'bg-blue-100 text-blue-700 border-2 border-blue-500' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}
-              >
-               <CreditCard size={16}/> Tarjeta
-             </button>
+                <option value={0}>Efectivo</option>
+                <option value={1}>Tarjeta</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowDiscountModal(true)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-orange-300 bg-orange-100 text-orange-700 transition-all hover:bg-orange-200"
+              title="Aplicar descuento"
+              aria-label="Aplicar descuento"
+            >
+              <Percent size={16} />
+            </button>
           </div>
 
           {notification && (
@@ -1197,25 +1676,26 @@ export const Sales = () => {
             </div>
           )}
 
-          <button 
-            disabled={cart.length === 0 || isProcessing}
-            onClick={handleFinalizeSale}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
-          >
-            {isProcessing ? 'Procesando...' : activeHeldSaleId ? 'Cobrar Venta en Espera' : 'Finalizar Venta'}
-          </button>
+          <div className="grid grid-cols-[3rem_1fr] gap-2">
+            <button
+              type="button"
+              disabled={cart.length === 0 || isProcessing}
+              onClick={handlePutSaleOnHold}
+              className="inline-flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Poner en espera"
+              aria-label="Poner en espera"
+            >
+              <Pause size={17} />
+            </button>
 
-          <button
-            type="button"
-            disabled={cart.length === 0 || isProcessing}
-            onClick={handlePutSaleOnHold}
-            className="w-full rounded-xl border border-slate-300 bg-white py-2.5 font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="inline-flex items-center gap-2">
-              <PauseCircle size={16} />
-              Poner en Espera
-            </span>
-          </button>
+            <button
+              disabled={cart.length === 0 || isProcessing}
+              onClick={handleFinalizeSale}
+              className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white shadow-md transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]"
+            >
+              {isProcessing ? 'Procesando...' : activeHeldSaleId ? 'Cobrar Venta en Espera' : 'Finalizar Venta'}
+            </button>
+          </div>
 
           {lastTicketData && (
             <button
@@ -1370,6 +1850,98 @@ export const Sales = () => {
         </div>
       )}
 
+      {isQuickCustomerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-lg">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Nuevo Cliente</h3>
+                <p className="mt-1 text-sm text-gray-500">Crea el cliente y asígnalo al ticket actual.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickCustomerModalOpen(false);
+                  resetQuickCustomerForm();
+                }}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Nombre</label>
+                <input
+                  value={quickCustomerForm.name}
+                  onChange={(e) => setQuickCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="Nombre del cliente"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Documento</label>
+                <input
+                  value={quickCustomerForm.documentNumber}
+                  onChange={(e) => setQuickCustomerForm((prev) => ({ ...prev, documentNumber: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="NIT / DNI / RUT"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Teléfono</label>
+                <input
+                  value={quickCustomerForm.phone}
+                  onChange={(e) => setQuickCustomerForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="+57 300 000 0000"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>
+                <input
+                  value={quickCustomerForm.email}
+                  onChange={(e) => setQuickCustomerForm((prev) => ({ ...prev, email: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="correo@cliente.com"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Dirección</label>
+                <input
+                  value={quickCustomerForm.address}
+                  onChange={(e) => setQuickCustomerForm((prev) => ({ ...prev, address: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="Dirección de contacto"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickCustomerModalOpen(false);
+                  resetQuickCustomerForm();
+                }}
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateQuickCustomer}
+                disabled={isCreatingQuickCustomer}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {isCreatingQuickCustomer ? 'Guardando...' : 'Crear Cliente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDiscountModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
@@ -1471,11 +2043,6 @@ export const Sales = () => {
         </div>
       )}
 
-      {ticketToPrint && (
-        <div className="print-ticket-container">
-          <TicketTemplate ticket={ticketToPrint} />
-        </div>
-      )}
     </div>
       )}
     </div>

@@ -35,6 +35,11 @@ export interface TicketData {
     id: string;
     email: string;
   };
+  customer?: {
+    id: string;
+    name: string;
+    documentNumber?: string;
+  } | null;
   items: TicketLineItem[];
   payments: TicketPayment[];
   subTotal: number;
@@ -61,6 +66,12 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
         <p className="text-[10px]">Sucursal: {ticket.branch.name}</p>
         {ticket.branch.address && <p className="text-[10px]">{ticket.branch.address}</p>}
         {ticket.branch.phone && <p className="text-[10px]">Tel: {ticket.branch.phone}</p>}
+        {ticket.customer?.name && (
+          <>
+            <p className="mt-1 text-[10px]">Cliente: {ticket.customer.name}</p>
+            {ticket.customer.documentNumber && <p className="text-[10px]">Doc: {ticket.customer.documentNumber}</p>}
+          </>
+        )}
       </header>
 
       <section className="border-b border-dashed border-black py-2 text-[10px]">

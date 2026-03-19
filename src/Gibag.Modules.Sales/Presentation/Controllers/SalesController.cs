@@ -61,6 +61,7 @@ public class SalesController : ControllerBase
                 s.TenantId,
                 s.BranchId,
                 s.UserId,
+                s.CustomerId,
                 s.CreatedAt,
                 s.SubTotal,
                 s.Tax,
@@ -122,6 +123,19 @@ public class SalesController : ControllerBase
             })
             .FirstOrDefaultAsync(cancellationToken);
 
+        var customer = saleData.CustomerId.HasValue
+            ? await _coreDbContext.Customers
+                .AsNoTracking()
+                .Where(c => c.Id == saleData.CustomerId.Value)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.DocumentNumber
+                })
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
         return Ok(new
         {
             success = true,
@@ -151,6 +165,14 @@ public class SalesController : ControllerBase
                     id = saleData.UserId,
                     email = _currentUser.Email ?? "cajero@sgp.local"
                 },
+                customer = customer == null
+                    ? null
+                    : new
+                    {
+                        id = customer.Id,
+                        name = customer.Name,
+                        documentNumber = customer.DocumentNumber
+                    },
                 items = saleData.Details.Select(d => new
                 {
                     productId = d.ProductId,
@@ -473,6 +495,7 @@ public class SalesController : ControllerBase
                 id = s.Id,
                 sessionId = s.SessionId,
                 branchId = s.BranchId,
+                customerId = s.CustomerId,
                 createdAt = s.CreatedAt,
                 subTotal = s.SubTotal,
                 discount = s.Discount,
@@ -489,10 +512,43 @@ public class SalesController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
+        var pendingCustomerIds = pendingSales
+            .Where(s => s.customerId.HasValue)
+            .Select(s => s.customerId!.Value)
+            .Distinct()
+            .ToList();
+
+        var customersById = pendingCustomerIds.Count == 0
+            ? new Dictionary<Guid, object>()
+            : await _coreDbContext.Customers
+                .AsNoTracking()
+                .Where(c => pendingCustomerIds.Contains(c.Id))
+                .ToDictionaryAsync(
+                    c => c.Id,
+                    c => (object)new { id = c.Id, name = c.Name, documentNumber = c.DocumentNumber },
+                    cancellationToken);
+
+        var data = pendingSales.Select(s => new
+        {
+            s.id,
+            s.sessionId,
+            s.branchId,
+            s.customerId,
+            customer = s.customerId.HasValue && customersById.TryGetValue(s.customerId.Value, out var customerData)
+                ? customerData
+                : null,
+            s.createdAt,
+            s.subTotal,
+            s.discount,
+            s.tax,
+            s.total,
+            s.details
+        });
+
         return Ok(new
         {
             success = true,
-            data = pendingSales
+            data
         });
     }
 
@@ -786,6 +842,7 @@ public class SalesController : ControllerBase
         var command = new CompletePendingSaleCommand(
             id,
             currentBranchId.Value,
+            request.CustomerId,
             request.Discount,
             request.Details,
             request.Payments
@@ -845,4 +902,4 @@ public class SalesController : ControllerBase
 
 public record RefundSaleRequest(string Reason = "Devolución");
 public record RegisterCashMovementRequest(decimal Amount, string Reason, string Type);
-public record CompletePendingSaleRequest(decimal Discount, List<CreateSaleDetailDto> Details, List<CreateSalePaymentDto> Payments);
+public record CompletePendingSaleRequest(Guid? CustomerId, decimal Discount, List<CreateSaleDetailDto> Details, List<CreateSalePaymentDto> Payments);

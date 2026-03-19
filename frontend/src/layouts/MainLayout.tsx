@@ -1,6 +1,6 @@
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
-import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users, Settings } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users, Settings, ContactRound } from 'lucide-react';
 import { useState } from 'react';
 import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
 import { useCatalogSync } from '../hooks/useCatalogSync';
@@ -8,6 +8,8 @@ import { useCatalogSync } from '../hooks/useCatalogSync';
 export const MainLayout = () => {
   const { user, branches, currentBranchId, setCurrentBranchId, logout } = useAuthStore();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isAdmin = user?.role === 'Admin';
   
@@ -15,12 +17,27 @@ export const MainLayout = () => {
   const { isSyncing } = useSyncOfflineSales();
   const { isCatalogSyncing } = useCatalogSync();
   const activeBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal no seleccionada';
+  const isPosRoute = location.pathname === '/pos';
+  const isCashHistoryTab = searchParams.get('tab') === 'cash';
+
+  const handlePosTabChange = (tab: 'pos' | 'cash') => {
+    const params = new URLSearchParams(searchParams);
+    if (tab === 'cash') {
+      params.set('tab', 'cash');
+    } else {
+      params.delete('tab');
+    }
+
+    const nextSearch = params.toString();
+    navigate({ pathname: '/pos', search: nextSearch ? `?${nextSearch}` : '' });
+  };
 
   const navigation = isAdmin
     ? [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Inventario', href: '/inventory', icon: Package },
         { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
+        { name: 'Clientes', href: '/customers', icon: ContactRound },
         { name: 'Usuarios', href: '/users', icon: Users },
         { name: 'Configuracion', href: '/settings', icon: Settings },
       ]
@@ -74,12 +91,33 @@ export const MainLayout = () => {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Header */}
         <header className="flex h-16 items-center justify-between bg-white px-6 shadow-sm">
-          <button 
-            className="p-1 text-gray-500 lg:hidden"
-            onClick={() => setIsMobileMenuOpen(true)}
-          >
-            <Menu size={24} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              className="p-1 text-gray-500 lg:hidden"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu size={24} />
+            </button>
+
+            {isPosRoute && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePosTabChange('pos')}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${!isCashHistoryTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+                >
+                  POS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePosTabChange('cash')}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${isCashHistoryTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+                >
+                  Historial de Cajas
+                </button>
+              </div>
+            )}
+          </div>
           
           <div className="ml-auto flex items-center gap-4">
             {user?.role === 'Admin' && branches.length > 1 && (

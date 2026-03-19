@@ -3,6 +3,12 @@ import { db } from '../db/db';
 import apiClient from '../api/apiClient';
 import { isAxiosError } from 'axios';
 
+const saleStatusToApiValue: Record<'Pending' | 'Completed' | 'Refunded', number> = {
+  Pending: 0,
+  Completed: 1,
+  Refunded: 2,
+};
+
 export function useSyncOfflineSales() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -48,6 +54,7 @@ export function useSyncOfflineSales() {
 
             if (syncAction === 'complete') {
               await apiClient.post(`/sales/${sale.id}/complete`, {
+                customerId: sale.customerId,
                 discount: sale.discount,
                 details: sale.details,
                 payments: sale.payments,
@@ -59,7 +66,7 @@ export function useSyncOfflineSales() {
             } else {
               await apiClient.post('/sales', {
                 ...apiPayload,
-                status: sale.status,
+                status: saleStatusToApiValue[sale.status],
               }, {
                 headers: {
                   'X-Branch-Id': sale.branchId,

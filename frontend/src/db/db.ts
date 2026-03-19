@@ -19,6 +19,9 @@ export interface OfflineSale {
   tenantId: string;
   sessionId: string;
   branchId: string;
+  customerId?: string;
+  customerName?: string;
+  customerDocumentNumber?: string;
   subTotal: number;
   tax: number;
   total: number;

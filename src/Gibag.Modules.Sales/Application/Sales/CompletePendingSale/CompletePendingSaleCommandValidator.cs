@@ -8,6 +8,9 @@ public class CompletePendingSaleCommandValidator : AbstractValidator<CompletePen
     {
         RuleFor(x => x.SaleId).NotEmpty().WithMessage("La venta es requerida.");
         RuleFor(x => x.BranchId).NotEmpty().WithMessage("La sucursal es requerida.");
+        RuleFor(x => x.CustomerId)
+            .Must(customerId => customerId == null || customerId != Guid.Empty)
+            .WithMessage("El cliente seleccionado no es válido.");
         RuleFor(x => x.Discount).GreaterThanOrEqualTo(0).WithMessage("El descuento no puede ser negativo.");
         RuleFor(x => x.Details).NotEmpty().WithMessage("La venta debe tener al menos un detalle.");
         RuleFor(x => x.Payments).NotEmpty().WithMessage("La venta completada debe incluir al menos un pago.");

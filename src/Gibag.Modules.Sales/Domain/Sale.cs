@@ -14,6 +14,7 @@ public class Sale : TenantEntityBase
     public Guid SessionId { get; private set; }
     public Guid BranchId { get; private set; }
     public Guid UserId { get; private set; }
+    public Guid? CustomerId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public decimal SubTotal { get; private set; }
     public decimal Tax { get; private set; }
@@ -36,7 +37,7 @@ public class Sale : TenantEntityBase
     // El parámetro ID explícito permite que el Frontend en PWA Offline-First pueda generar 
     // su propio UUID y lo envíe en la sincronización, evitando duplicados.
     public Sale(Guid id, Guid tenantId, Guid sessionId, Guid branchId, Guid userId,
-                decimal subTotal, decimal tax, decimal total, decimal discount = 0m,
+                decimal subTotal, decimal tax, decimal total, Guid? customerId = null, decimal discount = 0m,
                 SaleStatus status = SaleStatus.Completed, DateTimeOffset? createdAt = null)
         : base(tenantId)
     {
@@ -44,6 +45,7 @@ public class Sale : TenantEntityBase
         SessionId = sessionId;
         BranchId = branchId;
         UserId = userId;
+        CustomerId = customerId;
         SubTotal = subTotal;
         Tax = tax;
         Total = total;
@@ -64,6 +66,11 @@ public class Sale : TenantEntityBase
     public void AddPayment(Payment payment)
     {
         Payments.Add(payment);
+    }
+
+    public void AssignCustomer(Guid? customerId)
+    {
+        CustomerId = customerId;
     }
 
     public void UpdateTotals(decimal subTotal, decimal tax, decimal total)
