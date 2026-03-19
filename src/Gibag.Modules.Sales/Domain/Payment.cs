@@ -8,7 +8,8 @@ public enum PaymentMethod
     CreditCard,
     DebitCard,
     Transfer,
-    Other
+    Other,
+    Credit
 }
 
 public class Payment : TenantEntityBase

@@ -20,6 +20,7 @@ public class SalesDbContext : DbContext
     public DbSet<Sale> Sales { get; set; } = null!;
     public DbSet<SaleDetail> SaleDetails { get; set; } = null!;
     public DbSet<Payment> Payments { get; set; } = null!;
+    public DbSet<AccountReceivable> AccountReceivables { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +32,7 @@ public class SalesDbContext : DbContext
         modelBuilder.Entity<Sale>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<SaleDetail>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
+        modelBuilder.Entity<AccountReceivable>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
 
         // Constraints and indexes
         modelBuilder.Entity<Sale>()
@@ -44,6 +46,19 @@ public class SalesDbContext : DbContext
 
         modelBuilder.Entity<CashMovement>()
             .HasIndex(cm => new { cm.TenantId, cm.SessionId, cm.CreatedAt });
+
+        modelBuilder.Entity<AccountReceivable>()
+            .HasIndex(ar => new { ar.TenantId, ar.CustomerId, ar.Status });
+
+        modelBuilder.Entity<AccountReceivable>()
+            .HasIndex(ar => ar.SaleId)
+            .IsUnique();
+
+        modelBuilder.Entity<AccountReceivable>()
+            .HasOne(ar => ar.Sale)
+            .WithMany()
+            .HasForeignKey(ar => ar.SaleId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     public override int SaveChanges()

@@ -40,6 +40,7 @@ interface SalesSummaryResponse {
     paymentDistribution: {
       cash: { amount: number; percentage: number };
       card: { amount: number; percentage: number };
+      credit: { amount: number; percentage: number };
     };
     weeklySales: WeeklySale[];
   };
@@ -176,10 +177,11 @@ export const Dashboard = () => {
     ? [
         { name: 'Efectivo', value: Number(summary.paymentDistribution.cash.amount.toFixed(2)) },
         { name: 'Tarjeta', value: Number(summary.paymentDistribution.card.amount.toFixed(2)) },
+        { name: 'Crédito', value: Number(summary.paymentDistribution.credit.amount.toFixed(2)) },
       ]
     : [];
 
-  const paymentColors = ['#2563eb', '#14b8a6'];
+  const paymentColors = ['#2563eb', '#14b8a6', '#f59e0b'];
 
   return (
     <div className="space-y-6">
@@ -316,6 +318,7 @@ export const Dashboard = () => {
           <div className="mt-2 space-y-1 text-sm text-gray-600">
             <p>Efectivo: {summary?.paymentDistribution.cash.percentage ?? 0}%</p>
             <p>Tarjeta: {summary?.paymentDistribution.card.percentage ?? 0}%</p>
+            <p>Crédito: {summary?.paymentDistribution.credit.percentage ?? 0}%</p>
           </div>
         </div>
         </div>

@@ -67,6 +67,12 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             }
         }
 
+        var hasCreditPayment = request.Payments.Any(p => p.Method == PaymentMethod.Credit);
+        if (hasCreditPayment && (!request.CustomerId.HasValue || request.CustomerId.Value == Guid.Empty))
+        {
+            return Result<Guid>.Failure("Sales.CreditRequiresCustomer", "Para vender a crédito debes seleccionar un cliente.");
+        }
+
         var existingSale = await _dbContext.Sales
             .Include(s => s.Details)
             .Include(s => s.Payments)
@@ -178,12 +184,47 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         else
         {
             sale.MarkAsCompleted();
+            UpsertAccountReceivableFromPayments(sale, request.Payments);
         }
 
         await _dbContext.Sales.AddAsync(sale, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Result<Guid>.Success(sale.Id);
+    }
+
+    private void UpsertAccountReceivableFromPayments(Sale sale, List<CreateSalePaymentDto> payments)
+    {
+        var hasCredit = payments.Any(p => p.Method == PaymentMethod.Credit);
+        if (!hasCredit || !sale.CustomerId.HasValue)
+        {
+            return;
+        }
+
+        var nonCreditPaid = payments
+            .Where(p => p.Method != PaymentMethod.Credit)
+            .Sum(p => p.Amount);
+
+        var dueDate = sale.CreatedAt.AddDays(30);
+
+        var receivable = _dbContext.AccountReceivables
+            .FirstOrDefault(ar => ar.SaleId == sale.Id);
+
+        if (receivable == null)
+        {
+            receivable = new AccountReceivable(
+                sale.TenantId,
+                sale.CustomerId.Value,
+                sale.Id,
+                sale.Total,
+                nonCreditPaid,
+                dueDate);
+
+            _dbContext.AccountReceivables.Add(receivable);
+            return;
+        }
+
+        receivable.SyncFromSale(sale.Total, nonCreditPaid, dueDate);
     }
 
     private async Task<Result<Guid>> UpdatePendingSaleAsync(Sale sale, CreateSaleCommand request, Guid tenantId, CancellationToken cancellationToken)

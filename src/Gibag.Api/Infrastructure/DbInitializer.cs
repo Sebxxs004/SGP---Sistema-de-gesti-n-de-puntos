@@ -108,6 +108,33 @@ public static class DbInitializer
             ");
 
             await salesDb.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""AccountReceivables"" (
+                    ""Id"" uuid NOT NULL,
+                    ""TenantId"" uuid NOT NULL,
+                    ""CustomerId"" uuid NOT NULL,
+                    ""SaleId"" uuid NOT NULL,
+                    ""TotalAmount"" numeric NOT NULL,
+                    ""PaidAmount"" numeric NOT NULL,
+                    ""Balance"" numeric NOT NULL,
+                    ""DueDate"" timestamp with time zone NOT NULL,
+                    ""Status"" integer NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    CONSTRAINT ""PK_AccountReceivables"" PRIMARY KEY (""Id""),
+                    CONSTRAINT ""FK_AccountReceivables_Sales_SaleId"" FOREIGN KEY (""SaleId"") REFERENCES ""Sales"" (""Id"") ON DELETE CASCADE
+                );
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                CREATE INDEX IF NOT EXISTS ""IX_AccountReceivables_TenantId_CustomerId_Status""
+                ON ""AccountReceivables"" (""TenantId"", ""CustomerId"", ""Status"");
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AccountReceivables_SaleId""
+                ON ""AccountReceivables"" (""SaleId"");
+            ");
+
+            await salesDb.Database.ExecuteSqlRawAsync(@"
                 UPDATE ""Sales""
                 SET ""Status"" = 2
                 WHERE ""IsRefunded"" = true AND ""Status"" <> 2;

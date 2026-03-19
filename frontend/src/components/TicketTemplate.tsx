@@ -47,6 +47,9 @@ export interface TicketData {
   total: number;
 
   discount?: number; // Optional: discount applied to sale
+  isCreditSale?: boolean;
+  pendingBalance?: number;
+  receivableStatus?: string;
 }
 
 interface TicketTemplateProps {
@@ -99,6 +102,11 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
       </section>
 
       <section className="space-y-1 border-b border-dashed border-black py-2 text-[10px]">
+        {ticket.isCreditSale && (
+          <div className="mb-1 rounded border border-black px-2 py-1 text-center text-[10px] font-bold">
+            VENTA A CREDITO
+          </div>
+        )}
         <div className="flex justify-between">
           <span>Subtotal</span>
           <span>{formatCurrency(ticket.subTotal, currencySymbol)}</span>
@@ -117,6 +125,12 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
           <span>TOTAL</span>
           <span>{formatCurrency(ticket.total, currencySymbol)}</span>
         </div>
+        {ticket.isCreditSale && (
+          <div className="flex justify-between text-[11px] font-bold text-red-700">
+            <span>Saldo Pendiente</span>
+            <span>{formatCurrency(ticket.pendingBalance ?? ticket.total, currencySymbol)}</span>
+          </div>
+        )}
       </section>
 
       <section className="border-b border-dashed border-black py-2 text-[10px]">

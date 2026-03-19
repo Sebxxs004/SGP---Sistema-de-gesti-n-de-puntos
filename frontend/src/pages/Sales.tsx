@@ -222,6 +222,7 @@ const renderTicketHtml = (ticket: TicketData) => {
   const currencySymbol = ticket.company.currencySymbol ?? '$';
   const taxPercentage = ticket.company.taxPercentage ?? 16;
   const issuedAt = new Date(ticket.issuedAt).toLocaleString('es-CO');
+  const pendingBalance = ticket.pendingBalance ?? ticket.total;
 
   const itemsHtml = ticket.items
     .map(
@@ -302,10 +303,12 @@ const renderTicketHtml = (ticket: TicketData) => {
     </section>
     <div class="divider"></div>
     <section class="totals">
+      ${ticket.isCreditSale ? '<div style="border:1px solid #111;padding:4px;text-align:center;font-weight:700;margin-bottom:4px;">VENTA A CREDITO</div>' : ''}
       <div><span>Subtotal</span><span>${escapeHtml(formatCurrency(ticket.subTotal, currencySymbol))}</span></div>
       ${ticket.discount && ticket.discount > 0 ? `<div><span>Descuento</span><span>-${escapeHtml(formatCurrency(ticket.discount, currencySymbol))}</span></div>` : ''}
       <div><span>Impuestos (${taxPercentage.toFixed(2)}%)</span><span>${escapeHtml(formatCurrency(ticket.tax, currencySymbol))}</span></div>
       <div class="total"><span>TOTAL</span><span>${escapeHtml(formatCurrency(ticket.total, currencySymbol))}</span></div>
+      ${ticket.isCreditSale ? `<div class="total"><span>Saldo Pendiente</span><span>${escapeHtml(formatCurrency(pendingBalance, currencySymbol))}</span></div>` : ''}
     </section>
     <div class="divider"></div>
     <section>
@@ -326,7 +329,7 @@ export const Sales = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<number>(0); // 0: Cash, 1: CreditCard
+  const [paymentMethod, setPaymentMethod] = useState<number>(0); // 0: Cash, 1: CreditCard, 5: Credit
   const [isProcessing, setIsProcessing] = useState(false);
   const [isManualCatalogSyncing, setIsManualCatalogSyncing] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -430,6 +433,12 @@ export const Sales = () => {
   const subTotalAfterDiscount = Math.max(subTotal - discountAmount, 0);
   const tax = subTotalAfterDiscount * (taxPercentage / 100);
   const total = subTotalAfterDiscount + tax;
+
+  useEffect(() => {
+    if (!selectedCustomer && paymentMethod === 5) {
+      setPaymentMethod(0);
+    }
+  }, [selectedCustomer, paymentMethod]);
 
   const formatMoney = (value: number) => formatCurrency(value, currencySymbol);
 
@@ -590,7 +599,14 @@ export const Sales = () => {
       });
 
     const normalizedPayments: TicketPayment[] = payments.map((payment) => ({
-      method: payment.method === 0 ? 'Cash' : 'CreditCard',
+      method:
+        payment.method === 0
+          ? 'Cash'
+          : payment.method === 1
+            ? 'CreditCard'
+            : payment.method === 5
+              ? 'Credit'
+              : 'Other',
       amount: payment.amount,
     }));
 
@@ -625,6 +641,8 @@ export const Sales = () => {
         : null,
       items,
       payments: normalizedPayments,
+      isCreditSale: paymentMethod === 5,
+      pendingBalance: paymentMethod === 5 ? saleTotal : 0,
       subTotal: saleSubTotal,
       discount: saleDiscount,
       tax: saleTax,
@@ -890,6 +908,10 @@ export const Sales = () => {
     if (cart.length === 0) return;
     if (!currentBranchId) {
       setNotification({ message: 'Selecciona una sucursal activa antes de vender.', isError: true });
+      return;
+    }
+    if (paymentMethod === 5 && !selectedCustomer) {
+      setNotification({ message: 'Las ventas a crédito requieren seleccionar un cliente.', isError: true });
       return;
     }
     const activeSessionId = await ensureActiveSessionId();
@@ -1632,7 +1654,7 @@ export const Sales = () => {
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                {paymentMethod === 0 ? <Banknote size={16} /> : <CreditCard size={16} />}
+                {paymentMethod === 0 ? <Banknote size={16} /> : paymentMethod === 1 ? <CreditCard size={16} /> : <Clock3 size={16} />}
               </div>
               <select
                 value={paymentMethod}
@@ -1642,6 +1664,7 @@ export const Sales = () => {
               >
                 <option value={0}>Efectivo</option>
                 <option value={1}>Tarjeta</option>
+                {selectedCustomer && <option value={5}>A Crédito</option>}
               </select>
             </div>
 

@@ -1,4 +1,5 @@
 using FluentValidation;
+using Gibag.Modules.Sales.Domain;
 
 namespace Gibag.Modules.Sales.Application.Sales.CompletePendingSale;
 
@@ -27,5 +28,10 @@ public class CompletePendingSaleCommandValidator : AbstractValidator<CompletePen
             payment.RuleFor(p => p.Amount).GreaterThan(0);
             payment.RuleFor(p => p.Method).IsInEnum();
         });
+
+        RuleFor(x => x.CustomerId)
+            .NotNull()
+            .When(x => x.Payments.Any(p => p.Method == PaymentMethod.Credit))
+            .WithMessage("Las ventas a crédito requieren un cliente seleccionado.");
     }
 }

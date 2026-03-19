@@ -136,6 +136,16 @@ public class SalesController : ControllerBase
                 .FirstOrDefaultAsync(cancellationToken)
             : null;
 
+        var receivable = await _dbContext.AccountReceivables
+            .AsNoTracking()
+            .Where(ar => ar.SaleId == saleData.Id)
+            .Select(ar => new
+            {
+                ar.Balance,
+                ar.Status
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
         return Ok(new
         {
             success = true,
@@ -188,6 +198,9 @@ public class SalesController : ControllerBase
                     method = p.Method.ToString(),
                     amount = p.Amount
                 }),
+                isCreditSale = receivable != null,
+                pendingBalance = receivable?.Balance ?? 0m,
+                receivableStatus = receivable?.Status.ToString(),
                 subTotal = saleData.SubTotal,
                 discount = saleData.Discount,
                 tax = saleData.Tax,
@@ -268,9 +281,14 @@ public class SalesController : ControllerBase
             .Where(x => x.Method == PaymentMethod.CreditCard || x.Method == PaymentMethod.DebitCard)
             .Sum(x => x.Amount);
 
-        var totalPaymentAmount = cashAmount + cardAmount;
+        var creditAmount = paymentTodayRaw
+            .Where(x => x.Method == PaymentMethod.Credit)
+            .Sum(x => x.Amount);
+
+        var totalPaymentAmount = cashAmount + cardAmount + creditAmount;
         var cashPercentage = totalPaymentAmount == 0 ? 0 : Math.Round((cashAmount / totalPaymentAmount) * 100m, 2);
         var cardPercentage = totalPaymentAmount == 0 ? 0 : Math.Round((cardAmount / totalPaymentAmount) * 100m, 2);
+        var creditPercentage = totalPaymentAmount == 0 ? 0 : Math.Round((creditAmount / totalPaymentAmount) * 100m, 2);
 
         var weekStart = dayStart.AddDays(-6);
         var weeklySalesRows = await _dbContext.Sales
@@ -316,7 +334,8 @@ public class SalesController : ControllerBase
                 paymentDistribution = new
                 {
                     cash = new { amount = cashAmount, percentage = cashPercentage },
-                    card = new { amount = cardAmount, percentage = cardPercentage }
+                    card = new { amount = cardAmount, percentage = cardPercentage },
+                    credit = new { amount = creditAmount, percentage = creditPercentage }
                 },
                 weeklySales = weeklySeries
             }
