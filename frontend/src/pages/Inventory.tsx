@@ -66,6 +66,38 @@ type MovementFilters = {
   to: string;
 };
 
+type KardexFilters = {
+  branchId: string;
+  productId: string;
+  from: string;
+  to: string;
+};
+
+type KardexRow = {
+  id: string;
+  createdAt: string;
+  movementType: string;
+  quantity: number;
+  reference?: string;
+  entries: number;
+  exits: number;
+  balance: number;
+};
+
+type KardexResponse = {
+  success: boolean;
+  data: {
+    branchId: string;
+    branchName: string;
+    productId: string;
+    productName: string;
+    from?: string;
+    to?: string;
+    openingBalance: number;
+    rows: KardexRow[];
+  };
+};
+
 type CategoryItem = {
   id: string;
   name: string;
@@ -117,6 +149,13 @@ const defaultMovementFilters: MovementFilters = {
   to: '',
 };
 
+const defaultKardexFilters: KardexFilters = {
+  branchId: '',
+  productId: '',
+  from: '',
+  to: '',
+};
+
 export const Inventory = () => {
   const queryClient = useQueryClient();
   const currentBranchId = useAuthStore((state) => state.currentBranchId);
@@ -127,8 +166,10 @@ export const Inventory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState<{ text: string; isError: boolean } | null>(null);
   const [adjustModal, setAdjustModal] = useState<AdjustModalState | null>(null);
-  const [activeView, setActiveView] = useState<'stock' | 'movements' | 'categories'>('stock');
+  const [activeView, setActiveView] = useState<'stock' | 'movements' | 'kardex' | 'categories'>('stock');
   const [movementFilters, setMovementFilters] = useState<MovementFilters>(defaultMovementFilters);
+  const [kardexFilters, setKardexFilters] = useState<KardexFilters>(defaultKardexFilters);
+  const [kardexRequest, setKardexRequest] = useState<KardexFilters | null>(null);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(defaultCategoryForm);
   const [productForm, setProductForm] = useState<ProductForm>(defaultProductForm);
   const [showProductModal, setShowProductModal] = useState(false);
@@ -206,6 +247,31 @@ export const Inventory = () => {
       return response.data.data;
     },
     enabled: isAdmin,
+  });
+
+  const kardexQuery = useQuery({
+    queryKey: ['inventory-kardex', kardexRequest],
+    queryFn: async () => {
+      if (!kardexRequest) {
+        return null;
+      }
+
+      const params = new URLSearchParams();
+      params.set('branchId', kardexRequest.branchId);
+      params.set('productId', kardexRequest.productId);
+
+      if (kardexRequest.from) {
+        params.set('from', new Date(`${kardexRequest.from}T00:00:00`).toISOString());
+      }
+
+      if (kardexRequest.to) {
+        params.set('to', new Date(`${kardexRequest.to}T23:59:59`).toISOString());
+      }
+
+      const response = await apiClient.get<KardexResponse>(`/inventory/reports/kardex?${params.toString()}`);
+      return response.data.data;
+    },
+    enabled: !!kardexRequest,
   });
 
   const saveCategoryMutation = useMutation({
@@ -387,6 +453,26 @@ export const Inventory = () => {
     await saveProductMutation.mutateAsync(productForm);
   };
 
+  const handleGenerateKardexReport = () => {
+    const branchId = isAdmin ? kardexFilters.branchId : (currentBranchId ?? '');
+
+    if (!branchId) {
+      setNotification({ text: 'Debes seleccionar una sucursal para generar el kardex.', isError: true });
+      return;
+    }
+
+    if (!kardexFilters.productId) {
+      setNotification({ text: 'Debes seleccionar un producto para generar el kardex.', isError: true });
+      return;
+    }
+
+    setNotification(null);
+    setKardexRequest({
+      ...kardexFilters,
+      branchId,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -411,6 +497,13 @@ export const Inventory = () => {
             onClick={() => setActiveView('movements')}
           >
             Historial de Movimientos
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium ${activeView === 'kardex' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+            onClick={() => setActiveView('kardex')}
+          >
+            Kardex
           </button>
           {isAdmin && (
             <button
@@ -710,6 +803,140 @@ export const Inventory = () => {
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                         No hay movimientos para los filtros seleccionados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeView === 'kardex' && (
+        <div className="space-y-4">
+          <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-5">
+            {isAdmin && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Sucursal</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  value={kardexFilters.branchId}
+                  onChange={(e) => setKardexFilters((prev) => ({ ...prev, branchId: e.target.value }))}
+                >
+                  <option value="">Selecciona sucursal</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {!isAdmin && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Sucursal</label>
+                <input
+                  readOnly
+                  value={getBranchName(currentBranchId ?? '')}
+                  className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Producto</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={kardexFilters.productId}
+                onChange={(e) => setKardexFilters((prev) => ({ ...prev, productId: e.target.value }))}
+              >
+                <option value="">Selecciona producto</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>{product.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Desde</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={kardexFilters.from}
+                onChange={(e) => setKardexFilters((prev) => ({ ...prev, from: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Hasta</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                value={kardexFilters.to}
+                onChange={(e) => setKardexFilters((prev) => ({ ...prev, to: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                onClick={handleGenerateKardexReport}
+              >
+                Generar Reporte
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+                  <tr>
+                    <th className="px-6 py-4 font-semibold">Fecha</th>
+                    <th className="px-6 py-4 font-semibold">Tipo</th>
+                    <th className="px-6 py-4 font-semibold">Referencia</th>
+                    <th className="px-6 py-4 font-semibold text-right">Entradas</th>
+                    <th className="px-6 py-4 font-semibold text-right">Salidas</th>
+                    <th className="px-6 py-4 font-semibold text-right">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {kardexQuery.isLoading && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                        Generando reporte kardex...
+                      </td>
+                    </tr>
+                  )}
+
+                  {!kardexQuery.isLoading && kardexRequest && (kardexQuery.data?.rows ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                        No hay movimientos para los filtros seleccionados.
+                      </td>
+                    </tr>
+                  )}
+
+                  {!kardexQuery.isLoading && (kardexQuery.data?.rows ?? []).map((row) => (
+                    <tr key={row.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">{new Date(row.createdAt).toLocaleString('es-CO')}</td>
+                      <td className="px-6 py-4">{row.movementType}</td>
+                      <td className="px-6 py-4">{row.reference || '-'}</td>
+                      <td className="px-6 py-4 text-right font-semibold text-emerald-700">
+                        {row.entries > 0 ? row.entries : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-right font-semibold text-red-700">
+                        {row.exits > 0 ? row.exits : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-right font-semibold text-gray-900">{row.balance}</td>
+                    </tr>
+                  ))}
+
+                  {!kardexQuery.isLoading && !kardexRequest && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                        Selecciona producto, sucursal y presiona Generar Reporte.
                       </td>
                     </tr>
                   )}

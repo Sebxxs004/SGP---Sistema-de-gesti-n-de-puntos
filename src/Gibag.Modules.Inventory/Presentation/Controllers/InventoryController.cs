@@ -707,6 +707,189 @@ public class InventoryController : ControllerBase
         });
     }
 
+    [HttpGet("reports/kardex")]
+    public async Task<IActionResult> GetKardexReport([FromQuery] KardexReportRequest request, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        if (request.BranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "BranchId es obligatorio para generar el kardex." }
+            });
+        }
+
+        if (request.ProductId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Product.Required", message = "ProductId es obligatorio para generar el kardex." }
+            });
+        }
+
+        var product = await _dbContext.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == request.ProductId, cancellationToken);
+
+        if (product == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Inventory.ProductNotFound", message = "Producto no encontrado." }
+            });
+        }
+
+        var branch = await _coreDbContext.Branches
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == request.BranchId, cancellationToken);
+
+        if (branch == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                error = new { code = "Branch.NotFound", message = "Sucursal no encontrada." }
+            });
+        }
+
+        var openingBalanceQuery = _dbContext.StockMovements
+            .AsNoTracking()
+            .Where(sm => sm.BranchId == request.BranchId && sm.ProductId == request.ProductId);
+
+        if (request.From.HasValue)
+        {
+            openingBalanceQuery = openingBalanceQuery.Where(sm => sm.CreatedAt < request.From.Value);
+        }
+        else
+        {
+            openingBalanceQuery = openingBalanceQuery.Where(sm => false);
+        }
+
+        var openingMovements = await openingBalanceQuery
+            .OrderBy(sm => sm.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var openingBalance = openingMovements.Sum(ResolveSignedQuantity);
+
+        var movementsQuery = _dbContext.StockMovements
+            .AsNoTracking()
+            .Where(sm => sm.BranchId == request.BranchId && sm.ProductId == request.ProductId);
+
+        if (request.From.HasValue)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.CreatedAt >= request.From.Value);
+        }
+
+        if (request.To.HasValue)
+        {
+            movementsQuery = movementsQuery.Where(sm => sm.CreatedAt <= request.To.Value);
+        }
+
+        var movements = await movementsQuery
+            .OrderBy(sm => sm.CreatedAt)
+            .Take(2000)
+            .ToListAsync(cancellationToken);
+
+        var runningBalance = openingBalance;
+        var rows = movements.Select(sm =>
+        {
+            var signedQuantity = ResolveSignedQuantity(sm);
+            runningBalance += signedQuantity;
+
+            var entries = signedQuantity > 0 ? signedQuantity : 0m;
+            var exits = signedQuantity < 0 ? Math.Abs(signedQuantity) : 0m;
+
+            return new KardexRowDto(
+                sm.Id,
+                sm.CreatedAt,
+                ResolveKardexMovementType(sm),
+                signedQuantity,
+                sm.Reference,
+                entries,
+                exits,
+                runningBalance
+            );
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                branchId = request.BranchId,
+                branchName = branch.Name,
+                productId = product.Id,
+                productName = product.Name,
+                from = request.From,
+                to = request.To,
+                openingBalance,
+                rows
+            }
+        });
+    }
+
+    private static decimal ResolveSignedQuantity(StockMovement movement)
+    {
+        var absoluteQuantity = Math.Abs(movement.Quantity);
+
+        return movement.MovementType switch
+        {
+            MovementType.Sale => -absoluteQuantity,
+            MovementType.Out => -absoluteQuantity,
+            MovementType.Adjustment => movement.Quantity,
+            _ => movement.Quantity >= 0 ? absoluteQuantity : -absoluteQuantity
+        };
+    }
+
+    private static string ResolveKardexMovementType(StockMovement movement)
+    {
+        if (movement.MovementType == MovementType.Sale)
+        {
+            return "Venta";
+        }
+
+        if (movement.MovementType == MovementType.Adjustment)
+        {
+            return "Ajuste";
+        }
+
+        var normalizedReference = movement.Reference?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        if (movement.MovementType == MovementType.In && normalizedReference.Contains("compra"))
+        {
+            return "Compra";
+        }
+
+        if (movement.MovementType == MovementType.In && normalizedReference.Contains("devol"))
+        {
+            return "Devolucion";
+        }
+
+        if (movement.MovementType == MovementType.Out)
+        {
+            return "Salida";
+        }
+
+        if (movement.MovementType == MovementType.Transfer)
+        {
+            return "Transferencia";
+        }
+
+        if (movement.MovementType == MovementType.In)
+        {
+            return "Entrada";
+        }
+
+        return movement.MovementType.ToString();
+    }
+
     private bool IsAdmin() => string.Equals(_currentUser.Role, "Admin", StringComparison.OrdinalIgnoreCase);
 }
 
@@ -748,6 +931,24 @@ public sealed record StockMovementListItemDto(
     decimal Quantity,
     string? Reason,
     DateTimeOffset CreatedAt
+);
+
+public sealed record KardexReportRequest(
+    Guid BranchId,
+    Guid ProductId,
+    DateTimeOffset? From,
+    DateTimeOffset? To
+);
+
+public sealed record KardexRowDto(
+    Guid Id,
+    DateTimeOffset CreatedAt,
+    string MovementType,
+    decimal Quantity,
+    string? Reference,
+    decimal Entries,
+    decimal Exits,
+    decimal Balance
 );
 
 public sealed record UpsertCategoryRequest(
