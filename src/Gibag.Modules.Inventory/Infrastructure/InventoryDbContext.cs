@@ -22,6 +22,7 @@ public class InventoryDbContext : DbContext
     public DbSet<Supplier> Suppliers { get; set; } = null!;
     public DbSet<Purchase> Purchases { get; set; } = null!;
     public DbSet<PurchaseItem> PurchaseItems { get; set; } = null!;
+    public DbSet<ProductComponent> ProductComponents { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +35,7 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<StockMovement>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<Supplier>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<Purchase>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
+        modelBuilder.Entity<ProductComponent>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
 
         // Product Unique Indexes
         modelBuilder.Entity<Product>()
@@ -43,6 +45,22 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<Product>()
             .HasIndex(p => new { p.TenantId, p.Barcode })
             .IsUnique();
+
+        modelBuilder.Entity<ProductComponent>()
+            .HasIndex(pc => new { pc.TenantId, pc.CompositeProductId, pc.ComponentId })
+            .IsUnique();
+
+        modelBuilder.Entity<ProductComponent>()
+            .HasOne(pc => pc.CompositeProduct)
+            .WithMany(p => p.Components)
+            .HasForeignKey(pc => pc.CompositeProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProductComponent>()
+            .HasOne(pc => pc.Component)
+            .WithMany(p => p.UsedInComposites)
+            .HasForeignKey(pc => pc.ComponentId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // BranchStock Unique Index
         modelBuilder.Entity<BranchStock>()

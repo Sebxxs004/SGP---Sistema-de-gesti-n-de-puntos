@@ -53,10 +53,33 @@ public class InventoryController : ControllerBase
                 p.SKU,
                 p.BasePrice,
                 p.CategoryId,
+                p.IsComposite,
                 p.IsActive,
                 Category = p.Category!.Name
             })
             .ToListAsync(cancellationToken);
+
+        var productIds = products.Select(p => p.Id).ToList();
+        var componentsByCompositeId = await _dbContext.ProductComponents
+            .AsNoTracking()
+            .Where(pc => productIds.Contains(pc.CompositeProductId))
+            .Select(pc => new ProductCompositeComponentDto(
+                pc.CompositeProductId,
+                pc.ComponentId,
+                pc.Component != null ? pc.Component.Name : "Componente",
+                pc.Quantity
+            ))
+            .ToListAsync(cancellationToken);
+
+        var groupedComponents = componentsByCompositeId
+            .GroupBy(pc => pc.CompositeProductId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(item => new ProductComponentListItemDto(
+                    item.ComponentId,
+                    item.ComponentName,
+                    item.Quantity
+                )).ToList());
 
         var stocks = await _dbContext.BranchStocks
             .AsNoTracking()
@@ -72,6 +95,8 @@ public class InventoryController : ControllerBase
                 categoryId = p.CategoryId,
                 category = p.Category,
                 price = p.BasePrice,
+                isComposite = p.IsComposite,
+                components = groupedComponents.TryGetValue(p.Id, out var components) ? components : new List<ProductComponentListItemDto>(),
                 isActive = p.IsActive,
                 stock = stocks.TryGetValue(p.Id, out var quantity) ? quantity : 0m
             })
@@ -399,6 +424,41 @@ public class InventoryController : ControllerBase
             }
         }
 
+        var normalizedComponents = request.Components?
+            .Where(c => c.ComponentId != Guid.Empty && c.Quantity > 0m)
+            .GroupBy(c => c.ComponentId)
+            .Select(g => new ProductComponentRequest(g.Key, g.Sum(x => x.Quantity)))
+            .ToList() ?? new List<ProductComponentRequest>();
+
+        if (request.IsComposite)
+        {
+            if (normalizedComponents.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.ComponentsRequired", message = "Un producto compuesto debe tener al menos un ingrediente." }
+                });
+            }
+
+            var componentIds = normalizedComponents.Select(c => c.ComponentId).ToList();
+            var componentsFound = await _dbContext.Products
+                .AsNoTracking()
+                .Where(p => componentIds.Contains(p.Id) && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync(cancellationToken);
+
+            var missingComponent = componentIds.Except(componentsFound).FirstOrDefault();
+            if (missingComponent != Guid.Empty)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.ComponentNotFound", message = "Uno o más ingredientes no existen o están inactivos." }
+                });
+            }
+        }
+
         var product = new Product(
             _currentUser.TenantId.Value,
             request.CategoryId,
@@ -406,11 +466,33 @@ public class InventoryController : ControllerBase
             normalizedSku,
             normalizedBarcode,
             request.BasePrice,
-            request.Cost ?? request.BasePrice);
+            request.Cost ?? request.BasePrice,
+            request.IsComposite);
 
         await _dbContext.Products.AddAsync(product, cancellationToken);
 
-        if (request.InitialStock.HasValue && request.InitialStock.Value > 0)
+        if (request.IsComposite)
+        {
+            foreach (var component in normalizedComponents)
+            {
+                if (component.ComponentId == product.Id)
+                {
+                    return BadRequest(new
+                    {
+                        success = false,
+                        error = new { code = "Inventory.ComponentInvalid", message = "Un producto no puede ser ingrediente de sí mismo." }
+                    });
+                }
+
+                await _dbContext.ProductComponents.AddAsync(new ProductComponent(
+                    _currentUser.TenantId.Value,
+                    product.Id,
+                    component.ComponentId,
+                    component.Quantity), cancellationToken);
+            }
+        }
+
+        if (!request.IsComposite && request.InitialStock.HasValue && request.InitialStock.Value > 0)
         {
             var branchId = _currentUser.BranchId.Value;
 
@@ -509,13 +591,79 @@ public class InventoryController : ControllerBase
             }
         }
 
+        var normalizedComponents = request.Components?
+            .Where(c => c.ComponentId != Guid.Empty && c.Quantity > 0m)
+            .GroupBy(c => c.ComponentId)
+            .Select(g => new ProductComponentRequest(g.Key, g.Sum(x => x.Quantity)))
+            .ToList() ?? new List<ProductComponentRequest>();
+
+        if (request.IsComposite)
+        {
+            if (normalizedComponents.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.ComponentsRequired", message = "Un producto compuesto debe tener al menos un ingrediente." }
+                });
+            }
+
+            if (normalizedComponents.Any(c => c.ComponentId == id))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.ComponentInvalid", message = "Un producto no puede ser ingrediente de sí mismo." }
+                });
+            }
+
+            var componentIds = normalizedComponents.Select(c => c.ComponentId).ToList();
+            var componentsFound = await _dbContext.Products
+                .AsNoTracking()
+                .Where(p => componentIds.Contains(p.Id) && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync(cancellationToken);
+
+            var missingComponent = componentIds.Except(componentsFound).FirstOrDefault();
+            if (missingComponent != Guid.Empty)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = new { code = "Inventory.ComponentNotFound", message = "Uno o más ingredientes no existen o están inactivos." }
+                });
+            }
+        }
+
         product.Update(
             request.CategoryId,
             request.Name.Trim(),
             normalizedSku,
             normalizedBarcode,
             request.BasePrice,
-            request.Cost ?? request.BasePrice);
+            request.Cost ?? request.BasePrice,
+            request.IsComposite);
+
+        var existingComponents = await _dbContext.ProductComponents
+            .Where(pc => pc.CompositeProductId == id)
+            .ToListAsync(cancellationToken);
+
+        if (existingComponents.Count > 0)
+        {
+            _dbContext.ProductComponents.RemoveRange(existingComponents);
+        }
+
+        if (request.IsComposite)
+        {
+            foreach (var component in normalizedComponents)
+            {
+                await _dbContext.ProductComponents.AddAsync(new ProductComponent(
+                    product.TenantId,
+                    id,
+                    component.ComponentId,
+                    component.Quantity), cancellationToken);
+            }
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -545,7 +693,8 @@ public class InventoryController : ControllerBase
         }
 
         var hasStockOrMovements = await _dbContext.BranchStocks.AnyAsync(bs => bs.ProductId == id && bs.Quantity > 0, cancellationToken)
-            || await _dbContext.StockMovements.AnyAsync(sm => sm.ProductId == id, cancellationToken);
+            || await _dbContext.StockMovements.AnyAsync(sm => sm.ProductId == id, cancellationToken)
+            || await _dbContext.ProductComponents.AnyAsync(pc => pc.CompositeProductId == id || pc.ComponentId == id, cancellationToken);
 
         if (hasStockOrMovements)
         {
@@ -963,7 +1112,9 @@ public sealed record CreateProductRequest(
     decimal BasePrice,
     decimal? InitialStock,
     string? Barcode,
-    decimal? Cost
+    decimal? Cost,
+    bool IsComposite,
+    List<ProductComponentRequest>? Components
 );
 
 public sealed record UpdateProductRequest(
@@ -972,7 +1123,27 @@ public sealed record UpdateProductRequest(
     string Sku,
     decimal BasePrice,
     string? Barcode,
-    decimal? Cost
+    decimal? Cost,
+    bool IsComposite,
+    List<ProductComponentRequest>? Components
+);
+
+public sealed record ProductComponentRequest(
+    Guid ComponentId,
+    decimal Quantity
+);
+
+public sealed record ProductCompositeComponentDto(
+    Guid CompositeProductId,
+    Guid ComponentId,
+    string ComponentName,
+    decimal Quantity
+);
+
+public sealed record ProductComponentListItemDto(
+    Guid ComponentId,
+    string ComponentName,
+    decimal Quantity
 );
 
 public sealed record CategoryListItemDto(

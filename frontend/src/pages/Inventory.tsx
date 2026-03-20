@@ -13,6 +13,12 @@ type InventoryProduct = {
   categoryId: string;
   category: string;
   price: number;
+  isComposite: boolean;
+  components: {
+    componentId: string;
+    componentName: string;
+    quantity: number;
+  }[];
   isActive: boolean;
   stock: number;
 };
@@ -124,6 +130,12 @@ type ProductForm = {
   basePrice: string;
   initialStock: string;
   barcode: string;
+  isComposite: boolean;
+  components: {
+    componentId: string;
+    quantity: string;
+  }[];
+  ingredientSearch: string;
 };
 
 const defaultCategoryForm: CategoryForm = {
@@ -138,6 +150,9 @@ const defaultProductForm: ProductForm = {
   basePrice: '',
   initialStock: '0',
   barcode: '',
+  isComposite: false,
+  components: [],
+  ingredientSearch: '',
 };
 
 const defaultMovementFilters: MovementFilters = {
@@ -319,8 +334,17 @@ export const Inventory = () => {
         sku: payload.sku,
         categoryId: payload.categoryId,
         basePrice: Number(payload.basePrice),
-        initialStock: Number(payload.initialStock),
+        initialStock: payload.isComposite ? 0 : Number(payload.initialStock),
         barcode: payload.barcode || null,
+        isComposite: payload.isComposite,
+        components: payload.isComposite
+          ? payload.components
+              .filter((component) => component.componentId && Number(component.quantity) > 0)
+              .map((component) => ({
+                componentId: component.componentId,
+                quantity: Number(component.quantity),
+              }))
+          : [],
       };
 
       if (payload.id) {
@@ -358,6 +382,41 @@ export const Inventory = () => {
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const availableIngredients = useMemo(() => {
+    const blockedIds = new Set(productForm.components.map((component) => component.componentId));
+    if (productForm.id) {
+      blockedIds.add(productForm.id);
+    }
+
+    const search = productForm.ingredientSearch.trim().toLowerCase();
+
+    return products
+      .filter((product) => !blockedIds.has(product.id) && product.isActive)
+      .filter((product) => {
+        if (!search) {
+          return true;
+        }
+
+        return product.name.toLowerCase().includes(search) || product.sku.toLowerCase().includes(search);
+      })
+      .slice(0, 8);
+  }, [productForm.components, productForm.id, productForm.ingredientSearch, products]);
+
+  const addIngredientToRecipe = (componentId: string) => {
+    setProductForm((prev) => ({
+      ...prev,
+      components: [...prev.components, { componentId, quantity: '1' }],
+      ingredientSearch: '',
+    }));
+  };
+
+  const removeIngredientFromRecipe = (componentId: string) => {
+    setProductForm((prev) => ({
+      ...prev,
+      components: prev.components.filter((component) => component.componentId !== componentId),
+    }));
+  };
 
   const pageSize = 10;
   const totalStockPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
@@ -444,6 +503,12 @@ export const Inventory = () => {
       basePrice: String(product.price),
       initialStock: String(product.stock),
       barcode: '',
+      isComposite: product.isComposite,
+      components: product.components.map((component) => ({
+        componentId: component.componentId,
+        quantity: String(component.quantity),
+      })),
+      ingredientSearch: '',
     });
     setShowProductModal(true);
   };
@@ -603,6 +668,7 @@ export const Inventory = () => {
                     <th scope="col" className="px-6 py-4 font-semibold">SKU</th>
                     <th scope="col" className="px-6 py-4 font-semibold">Categoria</th>
                     <th scope="col" className="px-6 py-4 font-semibold text-right">Precio</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-center">Tipo</th>
                     <th scope="col" className="px-6 py-4 font-semibold text-right">Stock</th>
                     <th scope="col" className="px-6 py-4 font-semibold text-center">Estado</th>
                     {isAdmin && <th scope="col" className="px-6 py-4 font-semibold text-center">Accion</th>}
@@ -611,7 +677,7 @@ export const Inventory = () => {
                 <tbody className="divide-y divide-gray-200">
                   {stockQuery.isLoading && (
                     <tr>
-                      <td colSpan={isAdmin ? 7 : 6} className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan={isAdmin ? 8 : 7} className="px-6 py-12 text-center text-gray-500">
                         Cargando inventario de la sucursal...
                       </td>
                     </tr>
@@ -627,6 +693,11 @@ export const Inventory = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">{formatCurrency(product.price, currencySymbol)}</td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${product.isComposite ? 'bg-violet-50 text-violet-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {product.isComposite ? 'Compuesto' : 'Simple'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-right font-medium">
                         {product.stock}
                       </td>
@@ -681,7 +752,7 @@ export const Inventory = () => {
                   ))}
                   {filteredProducts.length === 0 && (
                     <tr>
-                      <td colSpan={isAdmin ? 7 : 6} className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan={isAdmin ? 8 : 7} className="px-6 py-12 text-center text-gray-500">
                         No se encontraron productos coincidentes.
                       </td>
                     </tr>
@@ -1179,15 +1250,20 @@ export const Inventory = () => {
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Stock Inicial (opcional)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
-                    value={productForm.initialStock}
-                    onChange={(e) => setProductForm((prev) => ({ ...prev, initialStock: e.target.value }))}
-                  />
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Tipo de producto</label>
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={productForm.isComposite}
+                      onChange={(e) => setProductForm((prev) => ({
+                        ...prev,
+                        isComposite: e.target.checked,
+                        components: e.target.checked ? prev.components : [],
+                        initialStock: e.target.checked ? '0' : prev.initialStock,
+                      }))}
+                    />
+                    Es un Producto Compuesto / Receta
+                  </label>
                 </div>
 
                 <div>
@@ -1199,6 +1275,95 @@ export const Inventory = () => {
                   />
                 </div>
               </div>
+
+              {!productForm.isComposite && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Stock Inicial (opcional)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.initialStock}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, initialStock: e.target.value }))}
+                  />
+                </div>
+              )}
+
+              {productForm.isComposite && (
+                <div className="space-y-3 rounded-lg border border-gray-200 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Ingredientes de la receta</p>
+                    <p className="text-xs text-gray-500">Agrega productos del catálogo y define la cantidad por unidad del combo.</p>
+                  </div>
+
+                  <div>
+                    <input
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                      placeholder="Buscar ingrediente por nombre o SKU..."
+                      value={productForm.ingredientSearch}
+                      onChange={(e) => setProductForm((prev) => ({ ...prev, ingredientSearch: e.target.value }))}
+                    />
+
+                    {availableIngredients.length > 0 && (
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-white">
+                        {availableIngredients.map((ingredient) => (
+                          <button
+                            key={ingredient.id}
+                            type="button"
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50"
+                            onClick={() => addIngredientToRecipe(ingredient.id)}
+                          >
+                            <span>{ingredient.name}</span>
+                            <span className="text-xs text-gray-500">{ingredient.sku}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {productForm.components.length === 0 && (
+                      <p className="text-xs text-amber-700">Debes agregar al menos un ingrediente.</p>
+                    )}
+
+                    {productForm.components.map((component) => {
+                      const componentProduct = products.find((product) => product.id === component.componentId);
+
+                      return (
+                        <div key={component.componentId} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-lg border border-gray-200 p-2">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{componentProduct?.name ?? 'Ingrediente'}</p>
+                            <p className="text-xs text-gray-500">{componentProduct?.sku ?? ''}</p>
+                          </div>
+
+                          <input
+                            type="number"
+                            min="0.001"
+                            step="0.001"
+                            className="w-28 rounded-lg border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500"
+                            value={component.quantity}
+                            onChange={(e) => setProductForm((prev) => ({
+                              ...prev,
+                              components: prev.components.map((current) =>
+                                current.componentId === component.componentId ? { ...current, quantity: e.target.value } : current
+                              ),
+                            }))}
+                          />
+
+                          <button
+                            type="button"
+                            className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                            onClick={() => removeIngredientFromRecipe(component.componentId)}
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
