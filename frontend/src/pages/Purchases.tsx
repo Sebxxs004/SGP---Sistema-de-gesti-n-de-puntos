@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { Eye, Plus, Trash2 } from 'lucide-react';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/useAuthStore';
 import { useCompanySettings } from '../hooks/useCompanySettings';
@@ -51,6 +51,37 @@ type PurchaseCartItem = {
   unitCost: number;
 };
 
+type PurchaseHistoryItem = {
+  purchaseId: string;
+  branchId: string;
+  branchName: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseDate: string;
+  totalAmount: number;
+  referenceNumber?: string;
+  items: Array<{
+    id: string;
+    productId: string;
+    productName: string;
+    quantity: number;
+    unitCost: number;
+    subtotal: number;
+  }>;
+};
+
+type PurchaseHistoryResponse = {
+  success: boolean;
+  data: PurchaseHistoryItem[];
+};
+
+type PurchaseHistoryFilters = {
+  branchId: string;
+  supplierId: string;
+  from: string;
+  to: string;
+};
+
 const defaultSupplierForm: SupplierForm = {
   name: '',
   contactName: '',
@@ -59,11 +90,18 @@ const defaultSupplierForm: SupplierForm = {
   address: '',
 };
 
+const defaultPurchaseHistoryFilters: PurchaseHistoryFilters = {
+  branchId: '',
+  supplierId: '',
+  from: '',
+  to: '',
+};
+
 export const Purchases = () => {
   const queryClient = useQueryClient();
   const branches = useAuthStore((state) => state.branches);
   const currentBranchId = useAuthStore((state) => state.currentBranchId);
-  const [activeTab, setActiveTab] = useState<'new' | 'suppliers'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'suppliers' | 'history'>('new');
   const [notification, setNotification] = useState<{ text: string; isError: boolean } | null>(null);
 
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
@@ -75,6 +113,8 @@ export const Purchases = () => {
   const [referenceNumber, setReferenceNumber] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [cartItems, setCartItems] = useState<PurchaseCartItem[]>([]);
+  const [historyFilters, setHistoryFilters] = useState<PurchaseHistoryFilters>(defaultPurchaseHistoryFilters);
+  const [selectedPurchaseDetail, setSelectedPurchaseDetail] = useState<PurchaseHistoryItem | null>(null);
 
   const companySettingsQuery = useCompanySettings();
   const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
@@ -94,6 +134,33 @@ export const Purchases = () => {
       return response.data.data.products;
     },
     enabled: !!currentBranchId,
+  });
+
+  const purchasesHistoryQuery = useQuery({
+    queryKey: ['inventory-purchases-history', historyFilters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+
+      if (historyFilters.branchId) {
+        params.set('branchId', historyFilters.branchId);
+      }
+
+      if (historyFilters.supplierId) {
+        params.set('supplierId', historyFilters.supplierId);
+      }
+
+      if (historyFilters.from) {
+        params.set('from', new Date(`${historyFilters.from}T00:00:00`).toISOString());
+      }
+
+      if (historyFilters.to) {
+        params.set('to', new Date(`${historyFilters.to}T23:59:59`).toISOString());
+      }
+
+      const queryString = params.toString();
+      const response = await apiClient.get<PurchaseHistoryResponse>(`/inventory/purchases${queryString ? `?${queryString}` : ''}`);
+      return response.data.data;
+    },
   });
 
   const saveSupplierMutation = useMutation({
@@ -154,6 +221,7 @@ export const Purchases = () => {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['inventory-stock', currentBranchId] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-movements'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-purchases-history'] });
       setNotification({ text: 'Compra procesada correctamente.', isError: false });
       setCartItems([]);
       setReferenceNumber('');
@@ -273,6 +341,13 @@ export const Purchases = () => {
             onClick={() => setActiveTab('suppliers')}
           >
             Proveedores
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium ${activeTab === 'history' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+            onClick={() => setActiveTab('history')}
+          >
+            Historial de Compras
           </button>
         </div>
       </div>
@@ -525,6 +600,117 @@ export const Purchases = () => {
         </div>
       )}
 
+      {activeTab === 'history' && (
+        <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Sucursal</label>
+              <select
+                value={historyFilters.branchId}
+                onChange={(e) => setHistoryFilters((prev) => ({ ...prev, branchId: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              >
+                <option value="">Todas</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Proveedor</label>
+              <select
+                value={historyFilters.supplierId}
+                onChange={(e) => setHistoryFilters((prev) => ({ ...prev, supplierId: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              >
+                <option value="">Todos</option>
+                {(suppliersQuery.data ?? []).map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Desde</label>
+              <input
+                type="date"
+                value={historyFilters.from}
+                onChange={(e) => setHistoryFilters((prev) => ({ ...prev, from: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Hasta</label>
+              <input
+                type="date"
+                value={historyFilters.to}
+                onChange={(e) => setHistoryFilters((prev) => ({ ...prev, to: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => setHistoryFilters(defaultPurchaseHistoryFilters)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-4 py-3 text-left">Fecha</th>
+                  <th className="px-4 py-3 text-left">Nro. Referencia</th>
+                  <th className="px-4 py-3 text-left">Proveedor</th>
+                  <th className="px-4 py-3 text-left">Sucursal destino</th>
+                  <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {purchasesHistoryQuery.isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">Cargando historial de compras...</td>
+                  </tr>
+                )}
+
+                {!purchasesHistoryQuery.isLoading && (purchasesHistoryQuery.data ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">No hay compras para los filtros seleccionados.</td>
+                  </tr>
+                )}
+
+                {!purchasesHistoryQuery.isLoading && (purchasesHistoryQuery.data ?? []).map((purchase) => (
+                  <tr key={purchase.purchaseId}>
+                    <td className="px-4 py-3 text-gray-700">{new Date(purchase.purchaseDate).toLocaleString('es-CO')}</td>
+                    <td className="px-4 py-3 text-gray-700">{purchase.referenceNumber || '-'}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{purchase.supplierName}</td>
+                    <td className="px-4 py-3 text-gray-700">{purchase.branchName}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(purchase.totalAmount, currencySymbol)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPurchaseDetail(purchase)}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                      >
+                        <Eye size={14} /> Ver Detalle
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {supplierModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-xl rounded-xl bg-white p-6 shadow-lg">
@@ -598,6 +784,55 @@ export const Purchases = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {selectedPurchaseDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-4xl rounded-xl bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-gray-900">Detalle de Compra</h3>
+
+            <div className="mt-4 grid gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 md:grid-cols-2">
+              <p><span className="font-medium">Fecha:</span> {new Date(selectedPurchaseDetail.purchaseDate).toLocaleString('es-CO')}</p>
+              <p><span className="font-medium">Factura:</span> {selectedPurchaseDetail.referenceNumber || '-'}</p>
+              <p><span className="font-medium">Proveedor:</span> {selectedPurchaseDetail.supplierName}</p>
+              <p><span className="font-medium">Sucursal:</span> {selectedPurchaseDetail.branchName}</p>
+              <p className="md:col-span-2"><span className="font-medium">Total:</span> {formatCurrency(selectedPurchaseDetail.totalAmount, currencySymbol)}</p>
+            </div>
+
+            <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Producto</th>
+                    <th className="px-4 py-3 text-right">Cantidad</th>
+                    <th className="px-4 py-3 text-right">Costo Unitario</th>
+                    <th className="px-4 py-3 text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {selectedPurchaseDetail.items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3 font-medium text-gray-900">{item.productName}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">{item.quantity}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(item.unitCost, currencySymbol)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(item.subtotal, currencySymbol)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedPurchaseDetail(null)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

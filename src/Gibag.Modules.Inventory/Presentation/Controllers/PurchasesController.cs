@@ -22,6 +22,80 @@ public class PurchasesController : ControllerBase
         _currentUser = currentUser;
     }
 
+    [HttpGet("purchases")]
+    public async Task<IActionResult> GetPurchases([FromQuery] PurchaseHistoryFilterRequest request, CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        var purchasesQuery = _dbContext.Purchases
+            .AsNoTracking()
+            .Include(p => p.Supplier)
+            .Include(p => p.Items)
+                .ThenInclude(i => i.Product)
+            .AsQueryable();
+
+        if (request.BranchId.HasValue && request.BranchId.Value != Guid.Empty)
+        {
+            purchasesQuery = purchasesQuery.Where(p => p.BranchId == request.BranchId.Value);
+        }
+
+        if (request.SupplierId.HasValue && request.SupplierId.Value != Guid.Empty)
+        {
+            purchasesQuery = purchasesQuery.Where(p => p.SupplierId == request.SupplierId.Value);
+        }
+
+        if (request.From.HasValue)
+        {
+            purchasesQuery = purchasesQuery.Where(p => p.PurchaseDate >= request.From.Value);
+        }
+
+        if (request.To.HasValue)
+        {
+            purchasesQuery = purchasesQuery.Where(p => p.PurchaseDate <= request.To.Value);
+        }
+
+        var purchases = await purchasesQuery
+            .OrderByDescending(p => p.PurchaseDate)
+            .Take(500)
+            .ToListAsync(cancellationToken);
+
+        var branchIds = purchases.Select(p => p.BranchId).Distinct().ToList();
+        var branchNames = await _coreDbContext.Branches
+            .AsNoTracking()
+            .Where(b => branchIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id, b => b.Name, cancellationToken);
+
+        var data = purchases.Select(purchase => new
+        {
+            purchaseId = purchase.Id,
+            purchase.BranchId,
+            branchName = branchNames.TryGetValue(purchase.BranchId, out var branchName) ? branchName : "Sucursal desconocida",
+            purchase.SupplierId,
+            supplierName = purchase.Supplier?.Name ?? "Proveedor desconocido",
+            purchase.PurchaseDate,
+            purchase.TotalAmount,
+            purchase.ReferenceNumber,
+            items = purchase.Items.Select(item => new
+            {
+                item.Id,
+                item.ProductId,
+                productName = item.Product?.Name ?? "Producto desconocido",
+                item.Quantity,
+                item.UnitCost,
+                subtotal = item.Quantity * item.UnitCost
+            })
+        });
+
+        return Ok(new
+        {
+            success = true,
+            data
+        });
+    }
+
     [HttpGet("suppliers")]
     public async Task<IActionResult> GetSuppliers(CancellationToken cancellationToken)
     {
@@ -411,4 +485,11 @@ public sealed record CreatePurchaseItemRequest(
     Guid ProductId,
     decimal Quantity,
     decimal UnitCost
+);
+
+public sealed record PurchaseHistoryFilterRequest(
+    Guid? BranchId,
+    Guid? SupplierId,
+    DateTimeOffset? From,
+    DateTimeOffset? To
 );
