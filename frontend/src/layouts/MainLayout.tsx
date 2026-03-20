@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
-import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users, Settings, ContactRound } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, LogOut, Menu, Users, Settings, ContactRound, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useSyncOfflineSales } from '../hooks/useSyncOfflineSales';
 import { useCatalogSync } from '../hooks/useCatalogSync';
@@ -36,6 +36,7 @@ export const MainLayout = () => {
     ? [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Inventario', href: '/inventory', icon: Package },
+        { name: 'Compras', href: '/purchases', icon: Truck },
         { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
         { name: 'Clientes', href: '/customers', icon: ContactRound },
         { name: 'Usuarios', href: '/users', icon: Users },

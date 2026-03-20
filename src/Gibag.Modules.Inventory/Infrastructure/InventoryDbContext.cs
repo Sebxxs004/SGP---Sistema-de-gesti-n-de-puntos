@@ -19,6 +19,9 @@ public class InventoryDbContext : DbContext
     public DbSet<Product> Products { get; set; } = null!;
     public DbSet<BranchStock> BranchStocks { get; set; } = null!;
     public DbSet<StockMovement> StockMovements { get; set; } = null!;
+    public DbSet<Supplier> Suppliers { get; set; } = null!;
+    public DbSet<Purchase> Purchases { get; set; } = null!;
+    public DbSet<PurchaseItem> PurchaseItems { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +32,8 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<Product>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<BranchStock>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
         modelBuilder.Entity<StockMovement>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
+        modelBuilder.Entity<Supplier>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
+        modelBuilder.Entity<Purchase>().HasQueryFilter(e => e.TenantId == _tenantService.CurrentTenantId);
 
         // Product Unique Indexes
         modelBuilder.Entity<Product>()
@@ -43,6 +48,33 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<BranchStock>()
             .HasIndex(bs => new { bs.TenantId, bs.BranchId, bs.ProductId })
             .IsUnique();
+
+        modelBuilder.Entity<Supplier>()
+            .HasIndex(s => new { s.TenantId, s.Name });
+
+        modelBuilder.Entity<Purchase>()
+            .HasIndex(p => new { p.TenantId, p.BranchId, p.PurchaseDate });
+
+        modelBuilder.Entity<Purchase>()
+            .HasOne(p => p.Supplier)
+            .WithMany(s => s.Purchases)
+            .HasForeignKey(p => p.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PurchaseItem>()
+            .HasOne(pi => pi.Purchase)
+            .WithMany(p => p.Items)
+            .HasForeignKey(pi => pi.PurchaseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PurchaseItem>()
+            .HasOne(pi => pi.Product)
+            .WithMany()
+            .HasForeignKey(pi => pi.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PurchaseItem>()
+            .HasIndex(pi => new { pi.PurchaseId, pi.ProductId });
     }
 
     public override int SaveChanges()

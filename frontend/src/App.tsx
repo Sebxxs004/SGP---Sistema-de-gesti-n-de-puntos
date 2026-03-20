@@ -12,6 +12,7 @@ import { CashOpening } from './pages/CashOpening';
 import { Users } from './pages/Users';
 import { Settings } from './pages/Settings';
 import { Customers } from './pages/Customers';
+import { Purchases } from './pages/Purchases';
 
 // Create a client
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ function App() {
               <Route element={<RoleGuard allowedRoles={["Admin"]} />}>
                 <Route path="/users" element={<Users />} />
                 <Route path="/customers" element={<Customers />} />
+                <Route path="/purchases" element={<Purchases />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
             </Route>
