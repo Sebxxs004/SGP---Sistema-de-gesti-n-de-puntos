@@ -46,6 +46,15 @@ interface SalesSummaryResponse {
   };
 }
 
+interface ProfitabilityResponse {
+  success: boolean;
+  data: {
+    totalSales: number;
+    totalCosts: number;
+    grossProfit: number;
+  };
+}
+
 export const Dashboard = () => {
   const user = useAuthStore(state => state.user);
   const isAdmin = user?.role === 'Admin';
@@ -56,6 +65,7 @@ export const Dashboard = () => {
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SalesSummaryResponse['data'] | null>(null);
+  const [profitability, setProfitability] = useState<ProfitabilityResponse['data'] | null>(null);
   const [actionMessage, setActionMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const companySettingsQuery = useCompanySettings();
   const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
@@ -79,6 +89,21 @@ export const Dashboard = () => {
       setSummaryError('No se pudieron cargar las métricas de ventas.');
     } finally {
       setIsLoadingSummary(false);
+    }
+  };
+
+  const refreshProfitability = async () => {
+    if (!currentBranchId || !isAdmin) {
+      setProfitability(null);
+      return;
+    }
+
+    try {
+      const response = await apiClient.get<ProfitabilityResponse>('/sales/reports/profitability');
+      setProfitability(response.data.data);
+    } catch (error) {
+      console.error('Error fetching profitability stats:', error);
+      setProfitability(null);
     }
   };
 
@@ -156,10 +181,12 @@ export const Dashboard = () => {
 
   useEffect(() => {
     refreshSummary();
+    refreshProfitability();
     refreshOfflineSales();
 
     const intervalId = window.setInterval(() => {
       refreshSummary();
+      refreshProfitability();
       refreshOfflineSales();
     }, 30000);
 
@@ -182,6 +209,7 @@ export const Dashboard = () => {
     : [];
 
   const paymentColors = ['#2563eb', '#14b8a6', '#f59e0b'];
+  const grossProfitClass = (profitability?.grossProfit ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600';
 
   return (
     <div className="space-y-6">
@@ -272,6 +300,21 @@ export const Dashboard = () => {
             </p>
           )}
         </div>
+
+        {isAdmin && (
+          <div className="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-500">Utilidad Bruta</h3>
+              <TrendingUp className="text-violet-500" size={20} />
+            </div>
+            <p className={`mt-2 text-2xl font-semibold ${grossProfitClass}`}>
+              {formatMoney(profitability?.grossProfit ?? 0)}
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              Ventas: {formatMoney(profitability?.totalSales ?? 0)} | Costos: {formatMoney(profitability?.totalCosts ?? 0)}
+            </p>
+          </div>
+        )}
       </div>
 
       {isAdmin && (

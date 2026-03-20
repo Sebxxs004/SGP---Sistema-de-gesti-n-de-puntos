@@ -146,8 +146,19 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
             request.CreatedAt
         );
 
+        var productIds = request.Details
+            .Select(d => d.ProductId)
+            .Distinct()
+            .ToList();
+
+        var productUnitCosts = await _inventoryService.GetProductUnitCostsAsync(productIds, cancellationToken);
+
         foreach (var detailDto in request.Details)
         {
+            var unitCost = productUnitCosts.TryGetValue(detailDto.ProductId, out var resolvedCost)
+                ? resolvedCost
+                : detailDto.UnitPrice;
+
             sale.AddDetail(new SaleDetail(
                 detailDto.Id,
                 tenantId.Value,
@@ -155,7 +166,8 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
                 detailDto.ProductId,
                 detailDto.Quantity,
                 detailDto.UnitPrice,
-                detailDto.DiscountAmount
+                detailDto.DiscountAmount,
+                unitCost
             ));
         }
 
@@ -270,8 +282,19 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
         _dbContext.SaleDetails.RemoveRange(sale.Details.ToList());
         sale.Details.Clear();
 
+        var productIds = request.Details
+            .Select(d => d.ProductId)
+            .Distinct()
+            .ToList();
+
+        var productUnitCosts = await _inventoryService.GetProductUnitCostsAsync(productIds, cancellationToken);
+
         foreach (var detailDto in request.Details)
         {
+            var unitCost = productUnitCosts.TryGetValue(detailDto.ProductId, out var resolvedCost)
+                ? resolvedCost
+                : detailDto.UnitPrice;
+
             sale.AddDetail(new SaleDetail(
                 detailDto.Id,
                 tenantId,
@@ -279,7 +302,8 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, Resul
                 detailDto.ProductId,
                 detailDto.Quantity,
                 detailDto.UnitPrice,
-                detailDto.DiscountAmount
+                detailDto.DiscountAmount,
+                unitCost
             ));
         }
 

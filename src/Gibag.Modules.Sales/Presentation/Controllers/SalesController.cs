@@ -342,6 +342,66 @@ public class SalesController : ControllerBase
         });
     }
 
+    [HttpGet("reports/profitability")]
+    public async Task<IActionResult> GetProfitabilityReport([FromQuery] ProfitabilityFilterRequest request, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(_currentUser.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return Forbid();
+        }
+
+        var currentBranchId = _currentUser.BranchId;
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar rentabilidad." }
+            });
+        }
+
+        var utcNow = DateTimeOffset.UtcNow;
+        var defaultFrom = new DateTimeOffset(utcNow.Year, utcNow.Month, utcNow.Day, 0, 0, 0, TimeSpan.Zero);
+        var defaultTo = defaultFrom.AddDays(1);
+
+        var from = request.From ?? defaultFrom;
+        var to = request.To ?? defaultTo;
+
+        var salesQuery = _dbContext.Sales
+            .AsNoTracking()
+            .Where(s => s.BranchId == currentBranchId.Value
+                && s.Status == SaleStatus.Completed
+                && s.CreatedAt >= from
+                && s.CreatedAt <= to);
+
+        var totalSales = await salesQuery.SumAsync(s => (decimal?)s.Total, cancellationToken) ?? 0m;
+
+        var totalCosts = await _dbContext.SaleDetails
+            .AsNoTracking()
+            .Where(d => d.Sale != null
+                && d.Sale.BranchId == currentBranchId.Value
+                && d.Sale.Status == SaleStatus.Completed
+                && d.Sale.CreatedAt >= from
+                && d.Sale.CreatedAt <= to)
+            .SumAsync(d => (decimal?)(d.Quantity * d.UnitCost), cancellationToken) ?? 0m;
+
+        var grossProfit = totalSales - totalCosts;
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                branchId = currentBranchId.Value,
+                from,
+                to,
+                totalSales,
+                totalCosts,
+                grossProfit
+            }
+        });
+    }
+
     [HttpGet("history/current-session")]
     public async Task<IActionResult> GetCurrentSessionSalesHistory(CancellationToken cancellationToken)
     {
@@ -922,3 +982,4 @@ public class SalesController : ControllerBase
 public record RefundSaleRequest(string Reason = "Devolución");
 public record RegisterCashMovementRequest(decimal Amount, string Reason, string Type);
 public record CompletePendingSaleRequest(Guid? CustomerId, decimal Discount, List<CreateSaleDetailDto> Details, List<CreateSalePaymentDto> Payments);
+public record ProfitabilityFilterRequest(DateTimeOffset? From, DateTimeOffset? To);

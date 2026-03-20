@@ -101,4 +101,25 @@ public class SalesInventoryIntegrationService : IInventoryService
 
         return Result.Success();
     }
+
+    public async Task<Dictionary<Guid, decimal>> GetProductUnitCostsAsync(IEnumerable<Guid> productIds, CancellationToken cancellationToken)
+    {
+        var ids = productIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, decimal>();
+        }
+
+        return await _inventoryDbContext.Products
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .ToDictionaryAsync(
+                p => p.Id,
+                p => p.Cost > 0m ? p.Cost : p.BasePrice,
+                cancellationToken);
+    }
 }

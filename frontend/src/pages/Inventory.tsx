@@ -473,6 +473,47 @@ export const Inventory = () => {
     });
   };
 
+  const handleExportKardexToCsv = () => {
+    if (!kardexQuery.data || kardexQuery.data.rows.length === 0) {
+      setNotification({ text: 'No hay datos de kardex para exportar.', isError: true });
+      return;
+    }
+
+    const delimiter = ';';
+    const escapeCsvValue = (value: string | number | null | undefined) => {
+      const normalized = value == null ? '' : String(value);
+      const escaped = normalized.replace(/"/g, '""');
+      return `"${escaped}"`;
+    };
+
+    const headers = ['Fecha', 'Tipo', 'Referencia', 'Entradas', 'Salidas', 'Balance'];
+    const rows = kardexQuery.data.rows.map((row) => [
+      new Date(row.createdAt).toLocaleString('es-CO'),
+      row.movementType,
+      row.reference || '',
+      row.entries,
+      row.exits,
+      row.balance,
+    ]);
+
+    const csvLines = [headers, ...rows]
+      .map((line) => line.map((cell) => escapeCsvValue(cell)).join(delimiter))
+      .join('\n');
+
+    const csvContent = `\uFEFF${csvLines}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const productName = kardexQuery.data.productName.replace(/\s+/g, '_').toLowerCase();
+
+    link.href = url;
+    link.download = `kardex_${productName}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -878,6 +919,13 @@ export const Inventory = () => {
             </div>
 
             <div className="flex items-end gap-2">
+              <button
+                type="button"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                onClick={handleExportKardexToCsv}
+              >
+                Exportar a CSV
+              </button>
               <button
                 type="button"
                 className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"

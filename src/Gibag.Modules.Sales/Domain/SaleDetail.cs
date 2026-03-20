@@ -8,6 +8,7 @@ public class SaleDetail : TenantEntityBase
     public Guid ProductId { get; private set; }
     public decimal Quantity { get; private set; }
     public decimal UnitPrice { get; private set; }
+    public decimal UnitCost { get; private set; }
     public decimal SubTotal { get; private set; }
 
     public decimal DiscountAmount { get; private set; } // Optional: discount per item
@@ -16,7 +17,7 @@ public class SaleDetail : TenantEntityBase
 
     private SaleDetail() {}
 
-    public SaleDetail(Guid id, Guid tenantId, Guid saleId, Guid productId, decimal quantity, decimal unitPrice)
+    public SaleDetail(Guid id, Guid tenantId, Guid saleId, Guid productId, decimal quantity, decimal unitPrice, decimal unitCost = 0m)
         : base(tenantId)
     {
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
@@ -24,11 +25,12 @@ public class SaleDetail : TenantEntityBase
         ProductId = productId;
         Quantity = quantity;
         UnitPrice = unitPrice;
+        UnitCost = unitCost;
         SubTotal = quantity * unitPrice;
         DiscountAmount = 0m;
     }
 
-    public SaleDetail(Guid id, Guid tenantId, Guid saleId, Guid productId, decimal quantity, decimal unitPrice, decimal discountAmount = 0m)
+    public SaleDetail(Guid id, Guid tenantId, Guid saleId, Guid productId, decimal quantity, decimal unitPrice, decimal discountAmount = 0m, decimal unitCost = 0m)
         : base(tenantId)
     {
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
@@ -36,6 +38,7 @@ public class SaleDetail : TenantEntityBase
         ProductId = productId;
         Quantity = quantity;
         UnitPrice = unitPrice;
+        UnitCost = unitCost;
         SubTotal = (quantity * unitPrice) - discountAmount;
         DiscountAmount = discountAmount;
     }
