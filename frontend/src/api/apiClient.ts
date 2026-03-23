@@ -2,7 +2,10 @@ import axios from 'axios';
 import { useAuthStore } from '../store/useAuthStore';
 
 // Read API URL from Vite env and fallback to local API launchSettings port.
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5102/api/v1';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
+  'http://localhost:5102/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
