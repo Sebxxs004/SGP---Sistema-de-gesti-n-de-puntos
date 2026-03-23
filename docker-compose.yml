@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  postgres:
+  db:
     image: postgres:15-alpine
     container_name: gibag_db
     environment:
@@ -12,18 +10,37 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gibag_user -d gibag_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: gibag_pgadmin
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: gibag_api
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@gibag.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=gibag_db;Username=gibag_user;Password=gibag_password
     depends_on:
-      - postgres
+      db:
+        condition: service_healthy
+    ports:
+      - "5102:8080"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: gibag_web
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
     restart: unless-stopped
 
 volumes:

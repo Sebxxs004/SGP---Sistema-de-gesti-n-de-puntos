@@ -1,0 +1,26 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy solution and project files first for better layer caching
+COPY Gibag.slnx ./
+COPY src/Gibag.Api/Gibag.Api.csproj src/Gibag.Api/
+COPY src/Gibag.Modules.Core/Gibag.Modules.Core.csproj src/Gibag.Modules.Core/
+COPY src/Gibag.Modules.Inventory/Gibag.Modules.Inventory.csproj src/Gibag.Modules.Inventory/
+COPY src/Gibag.Modules.Sales/Gibag.Modules.Sales.csproj src/Gibag.Modules.Sales/
+COPY src/Gibag.Shared/Gibag.Shared.csproj src/Gibag.Shared/
+
+RUN dotnet restore Gibag.slnx
+
+# Copy remaining source and publish API
+COPY . .
+RUN dotnet publish src/Gibag.Api/Gibag.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "Gibag.Api.dll"]
