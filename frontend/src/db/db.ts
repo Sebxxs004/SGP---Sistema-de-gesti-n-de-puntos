@@ -6,6 +6,8 @@ export interface OfflineSaleDetail {
   quantity: number;
   unitPrice: number;
   discountAmount?: number;
+  taxRate?: number;
+  taxAmount?: number;
 }
 
 export interface OfflinePayment {
@@ -52,6 +54,8 @@ export interface CatalogProduct {
   name: string;
   sku: string;
   price: number;
+  stock?: number;
+  taxRate?: number;
 }
 
 export interface SyncMetadata {

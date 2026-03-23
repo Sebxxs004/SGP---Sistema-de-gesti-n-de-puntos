@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "x/heEIvER6s=",
+  "dgSpecHash": "jDs8hTAR/G8=",
   "success": true,
-  "projectFilePath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Inventory\\Gibag.Modules.Inventory.csproj",
+  "projectFilePath": "C:\\sgp\\src\\Gibag.Modules.Inventory\\Gibag.Modules.Inventory.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\sebas\\.nuget\\packages\\bcrypt.net-next\\4.1.0\\bcrypt.net-next.4.1.0.nupkg.sha512",
     "C:\\Users\\sebas\\.nuget\\packages\\fluentvalidation\\12.1.1\\fluentvalidation.12.1.1.nupkg.sha512",

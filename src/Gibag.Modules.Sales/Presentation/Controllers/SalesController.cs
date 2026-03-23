@@ -73,7 +73,9 @@ public class SalesController : ControllerBase
                     d.ProductId,
                     d.Quantity,
                     d.UnitPrice,
-                    d.SubTotal
+                    d.SubTotal,
+                    d.TaxRate,
+                    d.TaxAmount
                 }).ToList(),
                 Payments = s.Payments.Select(p => new
                 {
@@ -192,7 +194,9 @@ public class SalesController : ControllerBase
                         : $"Producto {d.ProductId.ToString()[..8]}",
                     quantity = d.Quantity,
                     unitPrice = d.UnitPrice,
-                    subTotal = d.SubTotal
+                    subTotal = d.SubTotal,
+                    taxRate = d.TaxRate,
+                    taxAmount = d.TaxAmount
                 }),
                 payments = saleData.Payments.Select(p => new
                 {

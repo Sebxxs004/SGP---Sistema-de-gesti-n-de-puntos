@@ -42,15 +42,6 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
         if (userId == null || userId == Guid.Empty)
             return Result<Guid>.Failure("Auth.UserMissing", "No se encontró el usuario en sesión.");
 
-        var tenantConfig = await _coreDbContext.Tenants
-            .AsNoTracking()
-            .Where(t => t.Id == tenantId.Value)
-            .Select(t => new { t.TaxPercentage })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (tenantConfig == null)
-            return Result<Guid>.Failure("Tenant.NotFound", "No se encontró la configuración de la empresa.");
-
         if (request.CustomerId.HasValue)
         {
             var customerExists = await _coreDbContext.Customers
@@ -97,13 +88,13 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
             .Distinct()
             .ToList();
 
-        var productUnitCosts = await _inventoryService.GetProductUnitCostsAsync(productIds, cancellationToken);
+        var productPricing = await _inventoryService.GetProductPricingAsync(productIds, cancellationToken);
 
         foreach (var detailDto in request.Details)
         {
-            var unitCost = productUnitCosts.TryGetValue(detailDto.ProductId, out var resolvedCost)
-                ? resolvedCost
-                : detailDto.UnitPrice;
+            var pricing = productPricing.TryGetValue(detailDto.ProductId, out var resolvedPricing)
+                ? resolvedPricing
+                : new InventoryProductPricing(detailDto.UnitPrice, 0m);
 
             sale.AddDetail(new SaleDetail(
                 detailDto.Id,
@@ -113,7 +104,9 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
                 detailDto.Quantity,
                 detailDto.UnitPrice,
                 detailDto.DiscountAmount,
-                unitCost
+                pricing.UnitCost,
+                pricing.TaxRate,
+                0m
             ));
         }
 
@@ -133,7 +126,7 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
 
         var subTotalCalculated = sale.Details.Sum(d => d.SubTotal);
         var subTotalAfterDiscount = Math.Max(subTotalCalculated - request.Discount, 0m);
-        var taxCalculated = Math.Round(subTotalAfterDiscount * (tenantConfig.TaxPercentage / 100m), 2, MidpointRounding.AwayFromZero);
+        var taxCalculated = ApplyItemTaxBreakdown(sale, request.Discount);
         var totalCalculated = subTotalAfterDiscount + taxCalculated;
 
         sale.UpdateFinancials(subTotalCalculated, taxCalculated, totalCalculated, request.Discount);
@@ -144,6 +137,53 @@ public class CompletePendingSaleCommandHandler : IRequestHandler<CompletePending
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result<Guid>.Success(sale.Id);
+    }
+
+    private static decimal ApplyItemTaxBreakdown(Sale sale, decimal saleDiscount)
+    {
+        var details = sale.Details.ToList();
+        if (details.Count == 0)
+        {
+            return 0m;
+        }
+
+        var normalizedDiscount = Math.Max(saleDiscount, 0m);
+        var totalBase = details.Sum(d => Math.Max((d.UnitPrice - d.DiscountAmount) * d.Quantity, 0m));
+        var remainingDiscount = normalizedDiscount;
+        var accumulatedTax = 0m;
+
+        for (var i = 0; i < details.Count; i++)
+        {
+            var detail = details[i];
+            var lineBase = Math.Max((detail.UnitPrice - detail.DiscountAmount) * detail.Quantity, 0m);
+
+            decimal allocatedDiscount;
+            if (i == details.Count - 1)
+            {
+                allocatedDiscount = Math.Min(remainingDiscount, lineBase);
+            }
+            else if (totalBase <= 0m)
+            {
+                allocatedDiscount = 0m;
+            }
+            else
+            {
+                allocatedDiscount = Math.Round(normalizedDiscount * (lineBase / totalBase), 2, MidpointRounding.AwayFromZero);
+                allocatedDiscount = Math.Min(allocatedDiscount, lineBase);
+                allocatedDiscount = Math.Min(allocatedDiscount, remainingDiscount);
+            }
+
+            remainingDiscount = Math.Max(remainingDiscount - allocatedDiscount, 0m);
+
+            var effectiveTaxRate = detail.TaxRate < 0m ? 0m : detail.TaxRate;
+            var taxableBase = Math.Max(lineBase - allocatedDiscount, 0m);
+            var taxAmount = Math.Round(taxableBase * (effectiveTaxRate / 100m), 2, MidpointRounding.AwayFromZero);
+
+            detail.SetTaxBreakdown(effectiveTaxRate, taxAmount);
+            accumulatedTax += taxAmount;
+        }
+
+        return Math.Round(accumulatedTax, 2, MidpointRounding.AwayFromZero);
     }
 
     private void UpsertAccountReceivableFromPayments(Sale sale, List<CreateSalePaymentDto> payments)

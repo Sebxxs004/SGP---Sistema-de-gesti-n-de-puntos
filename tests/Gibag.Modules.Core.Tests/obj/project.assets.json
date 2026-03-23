@@ -2229,11 +2229,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\tests\\Gibag.Modules.Core.Tests\\Gibag.Modules.Core.Tests.csproj",
+      "projectUniqueName": "C:\\sgp\\tests\\Gibag.Modules.Core.Tests\\Gibag.Modules.Core.Tests.csproj",
       "projectName": "Gibag.Modules.Core.Tests",
-      "projectPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\tests\\Gibag.Modules.Core.Tests\\Gibag.Modules.Core.Tests.csproj",
+      "projectPath": "C:\\sgp\\tests\\Gibag.Modules.Core.Tests\\Gibag.Modules.Core.Tests.csproj",
       "packagesPath": "C:\\Users\\sebas\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\tests\\Gibag.Modules.Core.Tests\\obj\\",
+      "outputPath": "C:\\sgp\\tests\\Gibag.Modules.Core.Tests\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\sebas\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -2248,11 +2248,11 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Core\\Gibag.Modules.Core.csproj": {
-              "projectPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Modules.Core\\Gibag.Modules.Core.csproj"
+            "C:\\sgp\\src\\Gibag.Modules.Core\\Gibag.Modules.Core.csproj": {
+              "projectPath": "C:\\sgp\\src\\Gibag.Modules.Core\\Gibag.Modules.Core.csproj"
             },
-            "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Shared\\Gibag.Shared.csproj": {
-              "projectPath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\src\\Gibag.Shared\\Gibag.Shared.csproj"
+            "C:\\sgp\\src\\Gibag.Shared\\Gibag.Shared.csproj": {
+              "projectPath": "C:\\sgp\\src\\Gibag.Shared\\Gibag.Shared.csproj"
             }
           }
         }

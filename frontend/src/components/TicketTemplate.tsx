@@ -6,6 +6,8 @@ export interface TicketLineItem {
   quantity: number;
   unitPrice: number;
   subTotal: number;
+  taxRate?: number;
+  taxAmount?: number;
 }
 
 export interface TicketPayment {
@@ -59,7 +61,31 @@ interface TicketTemplateProps {
 export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
   const issuedAt = new Date(ticket.issuedAt);
   const currencySymbol = ticket.company.currencySymbol ?? '$';
-  const taxPercentage = ticket.company.taxPercentage ?? 16;
+
+  const taxBreakdownMap = new Map<number, { base: number; tax: number }>();
+
+  ticket.items.forEach((item) => {
+    const taxRate = Number(item.taxRate ?? 0);
+    const base = Number(item.subTotal ?? 0);
+    const tax = Number(item.taxAmount ?? 0);
+    const current = taxBreakdownMap.get(taxRate) ?? { base: 0, tax: 0 };
+    taxBreakdownMap.set(taxRate, {
+      base: current.base + base,
+      tax: current.tax + tax,
+    });
+  });
+
+  if (!taxBreakdownMap.has(0)) {
+    taxBreakdownMap.set(0, { base: 0, tax: 0 });
+  }
+
+  const taxBreakdownRows = Array.from(taxBreakdownMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, values]) => ({
+      rate,
+      base: values.base,
+      tax: values.tax,
+    }));
 
   return (
     <article className="ticket-print-root mx-auto w-[80mm] bg-white px-2 py-2 text-[11px] text-black">
@@ -101,6 +127,24 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
         ))}
       </section>
 
+      <section className="border-b border-dashed border-black py-2 text-[10px]">
+        <p className="mb-1 font-semibold">--- IMPUESTOS ---</p>
+        <div className="mb-1 grid grid-cols-[1fr_44px_1fr_1fr] gap-1 font-semibold">
+          <span>ITS</span>
+          <span className="text-right">%</span>
+          <span className="text-right">BASE</span>
+          <span className="text-right">IMPTO</span>
+        </div>
+        {taxBreakdownRows.map((row) => (
+          <div key={`tax-row-${row.rate}`} className="grid grid-cols-[1fr_44px_1fr_1fr] gap-1">
+            <span>IVA</span>
+            <span className="text-right">{row.rate.toFixed(2)}</span>
+            <span className="text-right">{formatCurrency(row.base, currencySymbol)}</span>
+            <span className="text-right">{formatCurrency(row.tax, currencySymbol)}</span>
+          </div>
+        ))}
+      </section>
+
       <section className="space-y-1 border-b border-dashed border-black py-2 text-[10px]">
         {ticket.isCreditSale && (
           <div className="mb-1 rounded border border-black px-2 py-1 text-center text-[10px] font-bold">
@@ -118,7 +162,7 @@ export const TicketTemplate = ({ ticket }: TicketTemplateProps) => {
           </div>
         )}
         <div className="flex justify-between">
-          <span>Impuestos ({taxPercentage.toFixed(2)}%)</span>
+          <span>Impuestos</span>
           <span>{formatCurrency(ticket.tax, currencySymbol)}</span>
         </div>
         <div className="flex justify-between text-[12px] font-bold">

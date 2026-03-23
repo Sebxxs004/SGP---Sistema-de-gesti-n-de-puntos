@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "iYjxTKgQ3Ps=",
+  "dgSpecHash": "m0LIautOpt0=",
   "success": true,
-  "projectFilePath": "C:\\Users\\sebas\\Desktop\\Repositorios\\SGP - Sistema de gestión de puntos\\tests\\Gibag.Modules.Inventory.Tests\\Gibag.Modules.Inventory.Tests.csproj",
+  "projectFilePath": "C:\\sgp\\tests\\Gibag.Modules.Inventory.Tests\\Gibag.Modules.Inventory.Tests.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\sebas\\.nuget\\packages\\bcrypt.net-next\\4.1.0\\bcrypt.net-next.4.1.0.nupkg.sha512",
     "C:\\Users\\sebas\\.nuget\\packages\\castle.core\\5.1.1\\castle.core.5.1.1.nupkg.sha512",

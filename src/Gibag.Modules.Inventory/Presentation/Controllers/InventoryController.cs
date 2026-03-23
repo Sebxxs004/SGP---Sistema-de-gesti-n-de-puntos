@@ -52,6 +52,7 @@ public class InventoryController : ControllerBase
                 p.Name,
                 p.SKU,
                 p.BasePrice,
+                p.TaxRate,
                 p.MinStockLevel,
                 p.CategoryId,
                 p.IsComposite,
@@ -96,6 +97,7 @@ public class InventoryController : ControllerBase
                 categoryId = p.CategoryId,
                 category = p.Category,
                 price = p.BasePrice,
+                taxRate = p.TaxRate,
                 minStockLevel = p.MinStockLevel,
                 isComposite = p.IsComposite,
                 components = groupedComponents.TryGetValue(p.Id, out var components) ? components : new List<ProductComponentListItemDto>(),
@@ -354,37 +356,20 @@ public class InventoryController : ControllerBase
 
         var branchProducts = await _dbContext.BranchStocks
             .AsNoTracking()
-            .Where(bs => bs.BranchId == branchId)
-            .Select(bs => bs.Product!)
-            .Where(p => p != null && p.IsActive && p.Category != null && p.Category.IsActive)
-            .Select(p => new CatalogProductSyncDto(
-                p!.Id,
-                p.Name,
-                p.SKU,
-                p.BasePrice,
-                p.CategoryId,
-                p.Category!.Name
+            .Where(bs => bs.BranchId == branchId && bs.Quantity > 0)
+            .Where(bs => bs.Product != null && bs.Product.IsActive && bs.Product.Category != null && bs.Product.Category.IsActive)
+            .Select(bs => new CatalogProductSyncDto(
+                bs.ProductId,
+                bs.Product!.Name,
+                bs.Product.SKU,
+                bs.Product.BasePrice,
+                bs.Product.CategoryId,
+                bs.Product.Category!.Name,
+                bs.Product.TaxRate,
+                bs.Quantity
             ))
             .Distinct()
             .ToListAsync(cancellationToken);
-
-        // Bootstrap fallback: if branch stock has not been configured yet,
-        // expose active tenant products so POS can initialize its local catalog.
-        if (branchProducts.Count == 0)
-        {
-            branchProducts = await _dbContext.Products
-                .AsNoTracking()
-                .Where(p => p.IsActive && p.Category != null && p.Category.IsActive)
-                .Select(p => new CatalogProductSyncDto(
-                    p.Id,
-                    p.Name,
-                    p.SKU,
-                    p.BasePrice,
-                    p.CategoryId,
-                    p.Category!.Name
-                ))
-                .ToListAsync(cancellationToken);
-        }
 
         var categories = branchProducts
             .GroupBy(p => new { p.CategoryId, p.CategoryName })
@@ -437,6 +422,15 @@ public class InventoryController : ControllerBase
             {
                 success = false,
                 error = new { code = "Validation.Invalid", message = "Nombre, SKU, Precio base y Categoria son obligatorios." }
+            });
+        }
+
+        if (request.TaxRate < 0m || request.TaxRate > 100m)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.InvalidTaxRate", message = "La tarifa de impuesto debe estar entre 0 y 100." }
             });
         }
 
@@ -524,7 +518,8 @@ public class InventoryController : ControllerBase
             request.BasePrice,
             request.Cost ?? request.BasePrice,
             request.IsComposite ? 0m : (request.MinStockLevel ?? 5m),
-            request.IsComposite);
+            request.IsComposite,
+            request.TaxRate);
 
         await _dbContext.Products.AddAsync(product, cancellationToken);
 
@@ -594,6 +589,15 @@ public class InventoryController : ControllerBase
             {
                 success = false,
                 error = new { code = "Validation.Invalid", message = "Nombre, SKU, Precio base y Categoria son obligatorios." }
+            });
+        }
+
+        if (request.TaxRate < 0m || request.TaxRate > 100m)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Validation.InvalidTaxRate", message = "La tarifa de impuesto debe estar entre 0 y 100." }
             });
         }
 
@@ -700,7 +704,8 @@ public class InventoryController : ControllerBase
             request.BasePrice,
             request.Cost ?? request.BasePrice,
             request.IsComposite ? 0m : (request.MinStockLevel ?? product.MinStockLevel),
-            request.IsComposite);
+            request.IsComposite,
+            request.TaxRate);
 
         var existingComponents = await _dbContext.ProductComponents
             .Where(pc => pc.CompositeProductId == id)
@@ -1109,7 +1114,9 @@ public sealed record CatalogProductSyncDto(
     string Sku,
     decimal Price,
     Guid CategoryId,
-    string CategoryName
+    string CategoryName,
+    decimal TaxRate,
+    decimal Stock
 );
 
 public sealed record AdjustStockRequest(
@@ -1169,6 +1176,7 @@ public sealed record CreateProductRequest(
     string Name,
     string Sku,
     decimal BasePrice,
+    decimal TaxRate,
     decimal? InitialStock,
     string? Barcode,
     decimal? Cost,
@@ -1182,6 +1190,7 @@ public sealed record UpdateProductRequest(
     string Name,
     string Sku,
     decimal BasePrice,
+    decimal TaxRate,
     string? Barcode,
     decimal? Cost,
     decimal? MinStockLevel,

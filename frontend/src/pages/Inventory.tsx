@@ -13,6 +13,7 @@ type InventoryProduct = {
   categoryId: string;
   category: string;
   price: number;
+  taxRate: number;
   minStockLevel: number;
   isComposite: boolean;
   components: {
@@ -129,6 +130,7 @@ type ProductForm = {
   sku: string;
   categoryId: string;
   basePrice: string;
+  taxRate: string;
   initialStock: string;
   minStockLevel: string;
   barcode: string;
@@ -150,6 +152,7 @@ const defaultProductForm: ProductForm = {
   sku: '',
   categoryId: '',
   basePrice: '',
+  taxRate: '0',
   initialStock: '0',
   minStockLevel: '5',
   barcode: '',
@@ -343,6 +346,7 @@ export const Inventory = () => {
         sku: payload.sku,
         categoryId: payload.categoryId,
         basePrice: Number(payload.basePrice),
+        taxRate: Number(payload.taxRate),
         initialStock: payload.isComposite ? 0 : Number(payload.initialStock),
         minStockLevel: payload.isComposite ? 0 : Number(payload.minStockLevel),
         barcode: payload.barcode || null,
@@ -511,6 +515,7 @@ export const Inventory = () => {
       sku: product.sku,
       categoryId: product.categoryId,
       basePrice: String(product.price),
+      taxRate: String(product.taxRate ?? 0),
       initialStock: String(product.stock),
       minStockLevel: String(product.minStockLevel),
       barcode: '',
@@ -1265,6 +1270,22 @@ export const Inventory = () => {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
                     value={productForm.basePrice}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, basePrice: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Impuesto (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                    value={productForm.taxRate}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, taxRate: e.target.value }))}
                     required
                   />
                 </div>

@@ -168,6 +168,8 @@ interface PendingSaleApiResponse {
       quantity: number;
       unitPrice: number;
       discountAmount?: number;
+      taxRate?: number;
+      taxAmount?: number;
     }>;
   }>;
 }
@@ -184,6 +186,7 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  taxRate: number;
 }
 
 interface CustomerSummary {
@@ -205,6 +208,12 @@ interface CustomersSearchResponse {
     total: number;
     totalPages: number;
   };
+}
+
+interface TaxBreakdownRow {
+  rate: number;
+  base: number;
+  tax: number;
 }
 
 interface QuickCustomerForm {
@@ -248,9 +257,29 @@ const escapeHtml = (value: string) =>
 
 const renderTicketHtml = (ticket: TicketData) => {
   const currencySymbol = ticket.company.currencySymbol ?? '$';
-  const taxPercentage = ticket.company.taxPercentage ?? 16;
   const issuedAt = new Date(ticket.issuedAt).toLocaleString('es-CO');
   const pendingBalance = ticket.pendingBalance ?? ticket.total;
+
+  const taxBreakdownMap = new Map<number, { base: number; tax: number }>();
+
+  ticket.items.forEach((item) => {
+    const taxRate = Number(item.taxRate ?? 0);
+    const base = Number(item.subTotal ?? 0);
+    const taxAmount = Number(item.taxAmount ?? 0);
+    const current = taxBreakdownMap.get(taxRate) ?? { base: 0, tax: 0 };
+    taxBreakdownMap.set(taxRate, {
+      base: current.base + base,
+      tax: current.tax + taxAmount,
+    });
+  });
+
+  if (!taxBreakdownMap.has(0)) {
+    taxBreakdownMap.set(0, { base: 0, tax: 0 });
+  }
+
+  const taxBreakdownRows = Array.from(taxBreakdownMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, values]) => ({ rate, ...values }));
 
   const itemsHtml = ticket.items
     .map(
@@ -274,6 +303,19 @@ const renderTicketHtml = (ticket: TicketData) => {
         <span>${escapeHtml(payment.method)}</span>
         <span>${escapeHtml(formatCurrency(payment.amount, currencySymbol))}</span>
       </div>
+    `,
+    )
+    .join('');
+
+  const taxBreakdownHtml = taxBreakdownRows
+    .map(
+      (row) => `
+      <tr>
+        <td>IVA</td>
+        <td style="text-align:right">${row.rate.toFixed(2)}</td>
+        <td style="text-align:right">${escapeHtml(formatCurrency(row.base, currencySymbol))}</td>
+        <td style="text-align:right">${escapeHtml(formatCurrency(row.tax, currencySymbol))}</td>
+      </tr>
     `,
     )
     .join('');
@@ -330,11 +372,26 @@ const renderTicketHtml = (ticket: TicketData) => {
       </table>
     </section>
     <div class="divider"></div>
+    <section>
+      <p><strong>--- IMPUESTOS ---</strong></p>
+      <table>
+        <thead>
+          <tr>
+            <td><strong>ITS</strong></td>
+            <td style="text-align:right"><strong>%</strong></td>
+            <td style="text-align:right"><strong>BASE</strong></td>
+            <td style="text-align:right"><strong>IMPTO</strong></td>
+          </tr>
+        </thead>
+        <tbody>${taxBreakdownHtml}</tbody>
+      </table>
+    </section>
+    <div class="divider"></div>
     <section class="totals">
       ${ticket.isCreditSale ? '<div style="border:1px solid #111;padding:4px;text-align:center;font-weight:700;margin-bottom:4px;">VENTA A CREDITO</div>' : ''}
       <div><span>Subtotal</span><span>${escapeHtml(formatCurrency(ticket.subTotal, currencySymbol))}</span></div>
       ${ticket.discount && ticket.discount > 0 ? `<div><span>Descuento</span><span>-${escapeHtml(formatCurrency(ticket.discount, currencySymbol))}</span></div>` : ''}
-      <div><span>Impuestos (${taxPercentage.toFixed(2)}%)</span><span>${escapeHtml(formatCurrency(ticket.tax, currencySymbol))}</span></div>
+      <div><span>Impuestos</span><span>${escapeHtml(formatCurrency(ticket.tax, currencySymbol))}</span></div>
       <div class="total"><span>TOTAL</span><span>${escapeHtml(formatCurrency(ticket.total, currencySymbol))}</span></div>
       ${ticket.isCreditSale ? `<div class="total"><span>Saldo Pendiente</span><span>${escapeHtml(formatCurrency(pendingBalance, currencySymbol))}</span></div>` : ''}
     </section>
@@ -508,15 +565,21 @@ export const Sales = () => {
         ? 'zReport'
         : 'pos';
   const companySettingsQuery = useCompanySettings();
-  const taxPercentage = companySettingsQuery.data?.taxPercentage ?? 16;
   const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
   const isOnline = navigator.onLine; // For UI feedback, hook handles real sync
   const currentBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal';
 
-  const filteredCatalog = catalog.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCatalog = catalog.filter(p => {
+    const hasStock = (p.stock ?? 0) > 0;
+    if (!hasStock) {
+      return false;
+    }
+
+    return (
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   const refreshLocalCatalog = async () => {
     if (!currentBranchId) {
@@ -562,9 +625,50 @@ export const Sales = () => {
 
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const discountAmount = discountType === 'percentage' ? (subTotal * discount) / 100 : discount;
-  const subTotalAfterDiscount = Math.max(subTotal - discountAmount, 0);
-  const tax = subTotalAfterDiscount * (taxPercentage / 100);
+  const normalizedDiscountAmount = Math.min(Math.max(discountAmount, 0), subTotal);
+  const discountRatio = subTotal > 0 ? normalizedDiscountAmount / subTotal : 0;
+  const cartTaxDetails = cart.map((item) => {
+    const lineSubTotal = item.price * item.quantity;
+    const lineDiscount = lineSubTotal * discountRatio;
+    const taxableBase = Math.max(lineSubTotal - lineDiscount, 0);
+    const appliedTaxRate = Number(item.taxRate ?? 0);
+    const taxAmount = taxableBase * (appliedTaxRate / 100);
+
+    return {
+      productId: item.id,
+      lineSubTotal,
+      taxableBase,
+      taxRate: appliedTaxRate,
+      taxAmount,
+    };
+  });
+
+  const subTotalAfterDiscount = cartTaxDetails.reduce((sum, row) => sum + row.taxableBase, 0);
+  const tax = cartTaxDetails.reduce((sum, row) => sum + row.taxAmount, 0);
   const total = subTotalAfterDiscount + tax;
+  const liveTaxBreakdown: TaxBreakdownRow[] = (() => {
+    const grouped = new Map<number, { base: number; tax: number }>();
+
+    cartTaxDetails.forEach((row) => {
+      const current = grouped.get(row.taxRate) ?? { base: 0, tax: 0 };
+      grouped.set(row.taxRate, {
+        base: current.base + row.taxableBase,
+        tax: current.tax + row.taxAmount,
+      });
+    });
+
+    if (!grouped.has(0)) {
+      grouped.set(0, { base: 0, tax: 0 });
+    }
+
+    return Array.from(grouped.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([rate, values]) => ({
+        rate,
+        base: values.base,
+        tax: values.tax,
+      }));
+  })();
 
   useEffect(() => {
     if (!selectedCustomer && paymentMethod === 5) {
@@ -637,13 +741,19 @@ export const Sales = () => {
     }
   };
 
-  const buildSaleDetails = (): OfflineSaleDetail[] => cart.map(item => ({
-    id: crypto.randomUUID(),
-    productId: item.id,
-    quantity: item.quantity,
-    unitPrice: item.price,
-    discountAmount: 0,
-  }));
+  const buildSaleDetails = (): OfflineSaleDetail[] => cart.map((item) => {
+    const lineTax = cartTaxDetails.find((row) => row.productId === item.id);
+
+    return {
+      id: crypto.randomUUID(),
+      productId: item.id,
+      quantity: item.quantity,
+      unitPrice: item.price,
+      discountAmount: 0,
+      taxRate: lineTax?.taxRate ?? 0,
+      taxAmount: lineTax?.taxAmount ?? 0,
+    };
+  });
 
   const buildSalePayload = (
     saleId: string,
@@ -701,6 +811,7 @@ export const Sales = () => {
         name: product?.name ?? `Producto ${detail.productId.slice(0, 8)}`,
         price: detail.unitPrice,
         quantity: detail.quantity,
+        taxRate: detail.taxRate ?? product?.taxRate ?? 0,
       };
     });
   };
@@ -727,6 +838,8 @@ export const Sales = () => {
           quantity: detail.quantity,
           unitPrice: detail.unitPrice,
           subTotal: detail.quantity * detail.unitPrice,
+          taxRate: detail.taxRate ?? 0,
+          taxAmount: detail.taxAmount ?? 0,
         };
       });
 
@@ -751,7 +864,6 @@ export const Sales = () => {
         name: companySettingsQuery.data?.name ?? 'SGP',
         taxId: companySettingsQuery.data?.taxId ?? 'N/A',
         thankYouMessage: companySettingsQuery.data?.thankYouMessage ?? 'Gracias por su compra',
-        taxPercentage,
         currencySymbol,
       },
       branch: {
@@ -863,7 +975,7 @@ export const Sales = () => {
       if (existing) {
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { id: product.id, name: product.name, price: product.price, quantity: 1 }];
+      return [...prev, { id: product.id, name: product.name, price: product.price, quantity: 1, taxRate: product.taxRate ?? 0 }];
     });
   };
 
@@ -1969,9 +2081,29 @@ export const Sales = () => {
                 <span>-{formatMoney(discountAmount)}</span>
               </div>
             )}
-            <div className="flex justify-between text-gray-500"><span>IVA ({taxPercentage.toFixed(2)}%)</span><span>{formatMoney(tax)}</span></div>
+            <div className="flex justify-between text-gray-500"><span>Impuestos (por item)</span><span>{formatMoney(tax)}</span></div>
             <div className="flex justify-between text-lg font-bold text-gray-900 border-t border-gray-200 pt-2 mt-2">
               <span>Total</span><span>{formatMoney(total)}</span>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700">
+            <p className="mb-2 font-semibold text-gray-800">--- IMPUESTOS (DIAN) ---</p>
+            <div className="grid grid-cols-[1fr_52px_1fr_1fr] gap-1 border-b border-gray-100 pb-1 font-semibold text-gray-600">
+              <span>ITS</span>
+              <span className="text-right">%</span>
+              <span className="text-right">BASE</span>
+              <span className="text-right">IMPTO</span>
+            </div>
+            <div className="mt-1 space-y-1">
+              {liveTaxBreakdown.map((row) => (
+                <div key={`live-tax-${row.rate}`} className="grid grid-cols-[1fr_52px_1fr_1fr] gap-1">
+                  <span>IVA</span>
+                  <span className="text-right">{row.rate.toFixed(2)}</span>
+                  <span className="text-right">{formatMoney(row.base)}</span>
+                  <span className="text-right">{formatMoney(row.tax)}</span>
+                </div>
+              ))}
             </div>
           </div>
 

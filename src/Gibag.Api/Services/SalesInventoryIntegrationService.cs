@@ -50,7 +50,7 @@ public class SalesInventoryIntegrationService : IInventoryService
         return Result.Success();
     }
 
-    public async Task<Dictionary<Guid, decimal>> GetProductUnitCostsAsync(IEnumerable<Guid> productIds, CancellationToken cancellationToken)
+    public async Task<Dictionary<Guid, InventoryProductPricing>> GetProductPricingAsync(IEnumerable<Guid> productIds, CancellationToken cancellationToken)
     {
         var ids = productIds
             .Where(id => id != Guid.Empty)
@@ -59,7 +59,7 @@ public class SalesInventoryIntegrationService : IInventoryService
 
         if (ids.Count == 0)
         {
-            return new Dictionary<Guid, decimal>();
+            return new Dictionary<Guid, InventoryProductPricing>();
         }
 
         return await _inventoryDbContext.Products
@@ -67,7 +67,9 @@ public class SalesInventoryIntegrationService : IInventoryService
             .Where(p => ids.Contains(p.Id))
             .ToDictionaryAsync(
                 p => p.Id,
-                p => p.Cost > 0m ? p.Cost : p.BasePrice,
+                p => new InventoryProductPricing(
+                    p.Cost > 0m ? p.Cost : p.BasePrice,
+                    p.TaxRate),
                 cancellationToken);
     }
 

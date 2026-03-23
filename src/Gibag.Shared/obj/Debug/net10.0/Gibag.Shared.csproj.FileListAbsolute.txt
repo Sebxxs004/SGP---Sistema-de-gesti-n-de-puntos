@@ -10,3 +10,15 @@ C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Giba
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Shared\obj\Debug\net10.0\refint\Gibag.Shared.dll
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.pdb
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Shared\obj\Debug\net10.0\ref\Gibag.Shared.dll
+C:\sgp\src\Gibag.Shared\bin\Debug\net10.0\Gibag.Shared.deps.json
+C:\sgp\src\Gibag.Shared\bin\Debug\net10.0\Gibag.Shared.dll
+C:\sgp\src\Gibag.Shared\bin\Debug\net10.0\Gibag.Shared.pdb
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.AssemblyInfoInputs.cache
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.AssemblyInfo.cs
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.csproj.CoreCompileInputs.cache
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.sourcelink.json
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.dll
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\refint\Gibag.Shared.dll
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\Gibag.Shared.pdb
+C:\sgp\src\Gibag.Shared\obj\Debug\net10.0\ref\Gibag.Shared.dll

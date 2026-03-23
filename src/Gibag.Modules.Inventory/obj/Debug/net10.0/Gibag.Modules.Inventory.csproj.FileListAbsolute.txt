@@ -18,3 +18,23 @@ C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Giba
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.pdb
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.genruntimeconfig.cache
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Inventory\obj\Debug\net10.0\ref\Gibag.Modules.Inventory.dll
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Modules.Inventory.deps.json
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Modules.Inventory.runtimeconfig.json
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Modules.Inventory.dll
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Modules.Inventory.pdb
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Modules.Core.dll
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Shared.dll
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Shared.pdb
+C:\sgp\src\Gibag.Modules.Inventory\bin\Debug\net10.0\Gibag.Modules.Core.pdb
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.csproj.AssemblyReference.cache
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.GeneratedMSBuildEditorConfig.editorconfig
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.AssemblyInfoInputs.cache
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.AssemblyInfo.cs
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.csproj.CoreCompileInputs.cache
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.sourcelink.json
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Mo.BA6B8880.Up2Date
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.dll
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\refint\Gibag.Modules.Inventory.dll
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.pdb
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\Gibag.Modules.Inventory.genruntimeconfig.cache
+C:\sgp\src\Gibag.Modules.Inventory\obj\Debug\net10.0\ref\Gibag.Modules.Inventory.dll

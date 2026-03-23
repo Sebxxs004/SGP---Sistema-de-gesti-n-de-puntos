@@ -16,3 +16,21 @@ C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Giba
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.pdb
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.genruntimeconfig.cache
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Core\obj\Debug\net10.0\ref\Gibag.Modules.Core.dll
+C:\sgp\src\Gibag.Modules.Core\bin\Debug\net10.0\Gibag.Modules.Core.deps.json
+C:\sgp\src\Gibag.Modules.Core\bin\Debug\net10.0\Gibag.Modules.Core.runtimeconfig.json
+C:\sgp\src\Gibag.Modules.Core\bin\Debug\net10.0\Gibag.Modules.Core.dll
+C:\sgp\src\Gibag.Modules.Core\bin\Debug\net10.0\Gibag.Modules.Core.pdb
+C:\sgp\src\Gibag.Modules.Core\bin\Debug\net10.0\Gibag.Shared.dll
+C:\sgp\src\Gibag.Modules.Core\bin\Debug\net10.0\Gibag.Shared.pdb
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.csproj.AssemblyReference.cache
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.AssemblyInfoInputs.cache
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.AssemblyInfo.cs
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.csproj.CoreCompileInputs.cache
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.sourcelink.json
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Mo.1000F9E3.Up2Date
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.dll
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\refint\Gibag.Modules.Core.dll
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.pdb
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\Gibag.Modules.Core.genruntimeconfig.cache
+C:\sgp\src\Gibag.Modules.Core\obj\Debug\net10.0\ref\Gibag.Modules.Core.dll

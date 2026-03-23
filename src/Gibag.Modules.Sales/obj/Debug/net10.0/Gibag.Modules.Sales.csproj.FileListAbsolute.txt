@@ -20,3 +20,25 @@ C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Giba
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.pdb
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.genruntimeconfig.cache
 C:\Users\sebas\Desktop\Repositorios\SGP - Sistema de gestión de puntos\src\Gibag.Modules.Sales\obj\Debug\net10.0\ref\Gibag.Modules.Sales.dll
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Sales.deps.json
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Sales.runtimeconfig.json
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Sales.dll
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Sales.pdb
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Core.dll
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Inventory.dll
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Shared.dll
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Core.pdb
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Modules.Inventory.pdb
+C:\sgp\src\Gibag.Modules.Sales\bin\Debug\net10.0\Gibag.Shared.pdb
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.csproj.AssemblyReference.cache
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.GeneratedMSBuildEditorConfig.editorconfig
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.AssemblyInfoInputs.cache
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.AssemblyInfo.cs
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.csproj.CoreCompileInputs.cache
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.sourcelink.json
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Mo.38941D27.Up2Date
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.dll
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\refint\Gibag.Modules.Sales.dll
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.pdb
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\Gibag.Modules.Sales.genruntimeconfig.cache
+C:\sgp\src\Gibag.Modules.Sales\obj\Debug\net10.0\ref\Gibag.Modules.Sales.dll

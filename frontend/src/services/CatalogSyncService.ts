@@ -13,6 +13,8 @@ interface CatalogSyncProductDto {
   price: number;
   categoryId: string;
   categoryName: string;
+  stock: number;
+  taxRate: number;
 }
 
 interface CatalogSyncPayload {
@@ -66,6 +68,8 @@ export async function syncCatalog(branchId: string, lastSyncDate?: string): Prom
     name: product.name,
     sku: product.sku,
     price: product.price,
+    stock: product.stock,
+    taxRate: product.taxRate,
   }));
 
   await db.transaction('rw', db.categories, db.products, db.syncMeta, async () => {
