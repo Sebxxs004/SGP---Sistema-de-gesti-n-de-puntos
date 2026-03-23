@@ -10,6 +10,7 @@ public class Product : TenantEntityBase
     public string? Barcode { get; private set; }
     public decimal BasePrice { get; private set; }
     public decimal Cost { get; private set; }
+    public decimal MinStockLevel { get; private set; }
     public bool IsComposite { get; private set; }
     public bool IsActive { get; private set; }
 
@@ -28,7 +29,7 @@ public class Product : TenantEntityBase
         UsedInComposites = new List<ProductComponent>();
     }
 
-    public Product(Guid tenantId, Guid categoryId, string name, string sku, string? barcode, decimal basePrice, decimal cost, bool isComposite = false) 
+    public Product(Guid tenantId, Guid categoryId, string name, string sku, string? barcode, decimal basePrice, decimal cost, decimal minStockLevel = 5m, bool isComposite = false) 
         : base(tenantId)
     {
         Id = Guid.NewGuid();
@@ -38,6 +39,7 @@ public class Product : TenantEntityBase
         Barcode = barcode;
         BasePrice = basePrice;
         Cost = cost;
+        MinStockLevel = minStockLevel < 0m ? 0m : minStockLevel;
         IsComposite = isComposite;
         IsActive = true;
         BranchStocks = new List<BranchStock>();
@@ -45,7 +47,7 @@ public class Product : TenantEntityBase
         UsedInComposites = new List<ProductComponent>();
     }
 
-    public void Update(Guid categoryId, string name, string sku, string? barcode, decimal basePrice, decimal cost, bool isComposite)
+    public void Update(Guid categoryId, string name, string sku, string? barcode, decimal basePrice, decimal cost, decimal minStockLevel, bool isComposite)
     {
         CategoryId = categoryId;
         Name = name;
@@ -53,6 +55,7 @@ public class Product : TenantEntityBase
         Barcode = barcode;
         BasePrice = basePrice;
         Cost = cost;
+        MinStockLevel = minStockLevel < 0m ? 0m : minStockLevel;
         IsComposite = isComposite;
     }
 

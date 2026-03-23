@@ -13,6 +13,7 @@ type InventoryProduct = {
   categoryId: string;
   category: string;
   price: number;
+  minStockLevel: number;
   isComposite: boolean;
   components: {
     componentId: string;
@@ -129,6 +130,7 @@ type ProductForm = {
   categoryId: string;
   basePrice: string;
   initialStock: string;
+  minStockLevel: string;
   barcode: string;
   isComposite: boolean;
   components: {
@@ -149,6 +151,7 @@ const defaultProductForm: ProductForm = {
   categoryId: '',
   basePrice: '',
   initialStock: '0',
+  minStockLevel: '5',
   barcode: '',
   isComposite: false,
   components: [],
@@ -335,6 +338,7 @@ export const Inventory = () => {
         categoryId: payload.categoryId,
         basePrice: Number(payload.basePrice),
         initialStock: payload.isComposite ? 0 : Number(payload.initialStock),
+        minStockLevel: payload.isComposite ? 0 : Number(payload.minStockLevel),
         barcode: payload.barcode || null,
         isComposite: payload.isComposite,
         components: payload.isComposite
@@ -502,6 +506,7 @@ export const Inventory = () => {
       categoryId: product.categoryId,
       basePrice: String(product.price),
       initialStock: String(product.stock),
+      minStockLevel: String(product.minStockLevel),
       barcode: '',
       isComposite: product.isComposite,
       components: product.components.map((component) => ({
@@ -670,6 +675,7 @@ export const Inventory = () => {
                     <th scope="col" className="px-6 py-4 font-semibold text-right">Precio</th>
                     <th scope="col" className="px-6 py-4 font-semibold text-center">Tipo</th>
                     <th scope="col" className="px-6 py-4 font-semibold text-right">Stock</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-right">Stock Min</th>
                     <th scope="col" className="px-6 py-4 font-semibold text-center">Estado</th>
                     {isAdmin && <th scope="col" className="px-6 py-4 font-semibold text-center">Accion</th>}
                   </tr>
@@ -677,13 +683,16 @@ export const Inventory = () => {
                 <tbody className="divide-y divide-gray-200">
                   {stockQuery.isLoading && (
                     <tr>
-                      <td colSpan={isAdmin ? 8 : 7} className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan={isAdmin ? 9 : 8} className="px-6 py-12 text-center text-gray-500">
                         Cargando inventario de la sucursal...
                       </td>
                     </tr>
                   )}
 
-                  {!stockQuery.isLoading && pagedProducts.map((product) => (
+                  {!stockQuery.isLoading && pagedProducts.map((product) => {
+                    const isBelowMin = !product.isComposite && product.stock <= product.minStockLevel;
+
+                    return (
                     <tr key={product.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 font-medium text-gray-900">{product.name}</td>
                       <td className="px-6 py-4">{product.sku}</td>
@@ -698,9 +707,13 @@ export const Inventory = () => {
                           {product.isComposite ? 'Compuesto' : 'Simple'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right font-medium">
-                        {product.stock}
+                      <td className={`px-6 py-4 text-right font-medium ${isBelowMin ? 'text-amber-700' : ''}`}>
+                        <span className="inline-flex items-center gap-1">
+                          {isBelowMin && <AlertCircle size={14} className="text-amber-600" />}
+                          {product.stock}
+                        </span>
                       </td>
+                      <td className="px-6 py-4 text-right">{product.isComposite ? '-' : product.minStockLevel}</td>
                       <td className="px-6 py-4 text-center">
                         {!product.isActive ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-700 px-2.5 py-1 text-xs font-medium text-white">
@@ -749,10 +762,11 @@ export const Inventory = () => {
                         </td>
                       )}
                     </tr>
-                  ))}
+                    );
+                  })}
                   {filteredProducts.length === 0 && (
                     <tr>
-                      <td colSpan={isAdmin ? 8 : 7} className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan={isAdmin ? 9 : 8} className="px-6 py-12 text-center text-gray-500">
                         No se encontraron productos coincidentes.
                       </td>
                     </tr>
@@ -1260,6 +1274,7 @@ export const Inventory = () => {
                         isComposite: e.target.checked,
                         components: e.target.checked ? prev.components : [],
                         initialStock: e.target.checked ? '0' : prev.initialStock,
+                        minStockLevel: e.target.checked ? '0' : (prev.minStockLevel || '5'),
                       }))}
                     />
                     Es un Producto Compuesto / Receta
@@ -1277,16 +1292,30 @@ export const Inventory = () => {
               </div>
 
               {!productForm.isComposite && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Stock Inicial (opcional)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
-                    value={productForm.initialStock}
-                    onChange={(e) => setProductForm((prev) => ({ ...prev, initialStock: e.target.value }))}
-                  />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Stock Inicial (opcional)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                      value={productForm.initialStock}
+                      onChange={(e) => setProductForm((prev) => ({ ...prev, initialStock: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Stock Mínimo</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                      value={productForm.minStockLevel}
+                      onChange={(e) => setProductForm((prev) => ({ ...prev, minStockLevel: e.target.value }))}
+                    />
+                  </div>
                 </div>
               )}
 

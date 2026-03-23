@@ -52,6 +52,7 @@ public class InventoryController : ControllerBase
                 p.Name,
                 p.SKU,
                 p.BasePrice,
+                p.MinStockLevel,
                 p.CategoryId,
                 p.IsComposite,
                 p.IsActive,
@@ -95,6 +96,7 @@ public class InventoryController : ControllerBase
                 categoryId = p.CategoryId,
                 category = p.Category,
                 price = p.BasePrice,
+                minStockLevel = p.MinStockLevel,
                 isComposite = p.IsComposite,
                 components = groupedComponents.TryGetValue(p.Id, out var components) ? components : new List<ProductComponentListItemDto>(),
                 isActive = p.IsActive,
@@ -110,6 +112,60 @@ public class InventoryController : ControllerBase
             {
                 branchId,
                 products = data
+            }
+        });
+    }
+
+    [HttpGet("alerts/low-stock")]
+    public async Task<IActionResult> GetLowStockAlerts(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+        {
+            return Forbid();
+        }
+
+        if (_currentUser.BranchId == null || _currentUser.BranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar alertas de inventario." }
+            });
+        }
+
+        var branchId = _currentUser.BranchId.Value;
+
+        var data = await _dbContext.Products
+            .AsNoTracking()
+            .Where(p => p.IsActive && !p.IsComposite)
+            .GroupJoin(
+                _dbContext.BranchStocks.AsNoTracking().Where(bs => bs.BranchId == branchId),
+                p => p.Id,
+                bs => bs.ProductId,
+                (p, stocks) => new
+                {
+                    Product = p,
+                    CurrentStock = stocks.Select(s => (decimal?)s.Quantity).FirstOrDefault() ?? 0m
+                })
+            .Where(x => x.CurrentStock <= x.Product.MinStockLevel)
+            .OrderBy(x => x.CurrentStock)
+            .ThenBy(x => x.Product.Name)
+            .Select(x => new LowStockAlertDto(
+                x.Product.Id,
+                x.Product.Name,
+                x.Product.SKU,
+                x.CurrentStock,
+                x.Product.MinStockLevel
+            ))
+            .ToListAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                branchId,
+                alerts = data
             }
         });
     }
@@ -467,6 +523,7 @@ public class InventoryController : ControllerBase
             normalizedBarcode,
             request.BasePrice,
             request.Cost ?? request.BasePrice,
+            request.IsComposite ? 0m : (request.MinStockLevel ?? 5m),
             request.IsComposite);
 
         await _dbContext.Products.AddAsync(product, cancellationToken);
@@ -642,6 +699,7 @@ public class InventoryController : ControllerBase
             normalizedBarcode,
             request.BasePrice,
             request.Cost ?? request.BasePrice,
+            request.IsComposite ? 0m : (request.MinStockLevel ?? product.MinStockLevel),
             request.IsComposite);
 
         var existingComponents = await _dbContext.ProductComponents
@@ -1113,6 +1171,7 @@ public sealed record CreateProductRequest(
     decimal? InitialStock,
     string? Barcode,
     decimal? Cost,
+    decimal? MinStockLevel,
     bool IsComposite,
     List<ProductComponentRequest>? Components
 );
@@ -1124,8 +1183,17 @@ public sealed record UpdateProductRequest(
     decimal BasePrice,
     string? Barcode,
     decimal? Cost,
+    decimal? MinStockLevel,
     bool IsComposite,
     List<ProductComponentRequest>? Components
+);
+
+public sealed record LowStockAlertDto(
+    Guid ProductId,
+    string ProductName,
+    string Sku,
+    decimal CurrentStock,
+    decimal MinStockLevel
 );
 
 public sealed record ProductComponentRequest(

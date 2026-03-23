@@ -55,6 +55,22 @@ interface ProfitabilityResponse {
   };
 }
 
+interface LowStockAlert {
+  productId: string;
+  productName: string;
+  sku: string;
+  currentStock: number;
+  minStockLevel: number;
+}
+
+interface LowStockAlertsResponse {
+  success: boolean;
+  data: {
+    branchId: string;
+    alerts: LowStockAlert[];
+  };
+}
+
 export const Dashboard = () => {
   const user = useAuthStore(state => state.user);
   const isAdmin = user?.role === 'Admin';
@@ -66,6 +82,7 @@ export const Dashboard = () => {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SalesSummaryResponse['data'] | null>(null);
   const [profitability, setProfitability] = useState<ProfitabilityResponse['data'] | null>(null);
+  const [lowStockAlerts, setLowStockAlerts] = useState<LowStockAlert[]>([]);
   const [actionMessage, setActionMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const companySettingsQuery = useCompanySettings();
   const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
@@ -104,6 +121,21 @@ export const Dashboard = () => {
     } catch (error) {
       console.error('Error fetching profitability stats:', error);
       setProfitability(null);
+    }
+  };
+
+  const refreshLowStockAlerts = async () => {
+    if (!currentBranchId || !isAdmin) {
+      setLowStockAlerts([]);
+      return;
+    }
+
+    try {
+      const response = await apiClient.get<LowStockAlertsResponse>('/inventory/alerts/low-stock');
+      setLowStockAlerts(response.data.data.alerts);
+    } catch (error) {
+      console.error('Error fetching low stock alerts:', error);
+      setLowStockAlerts([]);
     }
   };
 
@@ -182,11 +214,13 @@ export const Dashboard = () => {
   useEffect(() => {
     refreshSummary();
     refreshProfitability();
+    refreshLowStockAlerts();
     refreshOfflineSales();
 
     const intervalId = window.setInterval(() => {
       refreshSummary();
       refreshProfitability();
+      refreshLowStockAlerts();
       refreshOfflineSales();
     }, 30000);
 
@@ -388,6 +422,30 @@ export const Dashboard = () => {
         ) : (
           <p className="text-sm text-gray-500">Sin ventas registradas hoy para mostrar ranking.</p>
         )}
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+          <h3 className="mb-4 text-lg font-semibold text-gray-800">Alertas de Inventario</h3>
+          {lowStockAlerts.length === 0 ? (
+            <p className="text-sm text-gray-500">Stock Saludable</p>
+          ) : (
+            <div className="space-y-3">
+              {lowStockAlerts.slice(0, 5).map((alert) => (
+                <div key={alert.productId} className="flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{alert.productName}</p>
+                    <p className="text-xs text-gray-500">SKU: {alert.sku}</p>
+                  </div>
+                  <div className="text-right text-sm">
+                    <p className="font-semibold text-amber-700">Stock: {alert.currentStock}</p>
+                    <p className="text-xs text-gray-600">Min: {alert.minStockLevel}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
