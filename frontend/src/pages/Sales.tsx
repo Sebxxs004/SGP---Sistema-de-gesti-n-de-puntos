@@ -78,6 +78,34 @@ interface TicketDataResponse {
   data: TicketData;
 }
 
+interface ZReportPaymentBreakdown {
+  method: string;
+  amount: number;
+}
+
+interface ZReportData {
+  branchId: string;
+  branchName: string;
+  date: string;
+  generatedAt: string;
+  grossSales: number;
+  discounts: number;
+  refunds: number;
+  netSales: number;
+  ticketCount: number;
+  paymentBreakdown: ZReportPaymentBreakdown[];
+  cashMovements: {
+    cashIn: number;
+    cashOut: number;
+    net: number;
+  };
+}
+
+interface ZReportResponse {
+  success: boolean;
+  data: ZReportData;
+}
+
 interface CashSessionHistoryItem {
   id: string;
   cashierName: string;
@@ -325,6 +353,101 @@ const renderTicketHtml = (ticket: TicketData) => {
 </html>`;
 };
 
+const formatPaymentMethodLabel = (method: string) => {
+  switch (method.toLowerCase()) {
+    case 'cash':
+      return 'Efectivo';
+    case 'creditcard':
+      return 'Tarjeta Credito';
+    case 'debitcard':
+      return 'Tarjeta Debito';
+    case 'transfer':
+      return 'Transferencia';
+    case 'credit':
+      return 'Credito';
+    default:
+      return method;
+  }
+};
+
+const renderZReportHtml = (
+  report: ZReportData,
+  currencySymbol: string,
+  companyName: string,
+  taxId: string,
+) => {
+  const generatedAt = new Date(report.generatedAt).toLocaleString('es-CO');
+  const reportDate = `${report.date} 00:00`;
+  const paymentRows = report.paymentBreakdown
+    .map((payment) => `
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <span>${escapeHtml(formatPaymentMethodLabel(payment.method))}</span>
+        <span>${escapeHtml(formatCurrency(payment.amount, currencySymbol))}</span>
+      </div>
+    `)
+    .join('');
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reporte de Cierre Z</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body { font-family: Arial, sans-serif; color: #000; font-size: 11px; }
+    .ticket { width: 72mm; margin: 0 auto; }
+    .center { text-align: center; }
+    .divider { border-bottom: 1px dashed #111; margin: 8px 0; }
+    h1 { margin: 0; font-size: 13px; }
+    p { margin: 2px 0; }
+    .row { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; }
+    .strong { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <article class="ticket">
+    <header class="center">
+      <h1>${escapeHtml(companyName || 'SGP')}</h1>
+      <p>NIT: ${escapeHtml(taxId || 'N/A')}</p>
+      <p>${escapeHtml(report.branchName)}</p>
+    </header>
+    <div class="divider"></div>
+    <section class="center">
+      <p class="strong">REPORTE DE CIERRE Z</p>
+      <p>Fecha operativa: ${escapeHtml(reportDate)}</p>
+      <p>Generado: ${escapeHtml(generatedAt)}</p>
+    </section>
+    <div class="divider"></div>
+    <section>
+      <div class="row"><span>Ventas Brutas</span><span>${escapeHtml(formatCurrency(report.grossSales, currencySymbol))}</span></div>
+      <div class="row"><span>Descuentos</span><span>-${escapeHtml(formatCurrency(report.discounts, currencySymbol))}</span></div>
+      <div class="row"><span>Devoluciones</span><span>-${escapeHtml(formatCurrency(report.refunds, currencySymbol))}</span></div>
+      <div class="row strong"><span>Ventas Netas</span><span>${escapeHtml(formatCurrency(report.netSales, currencySymbol))}</span></div>
+      <div class="row"><span>Tickets Emitidos</span><span>${report.ticketCount}</span></div>
+    </section>
+    <div class="divider"></div>
+    <section>
+      <p class="strong">Desglose de Pagos</p>
+      ${paymentRows || '<p>Sin pagos registrados</p>'}
+    </section>
+    <div class="divider"></div>
+    <section>
+      <p class="strong">Movimientos de Caja</p>
+      <div class="row"><span>Entradas</span><span>${escapeHtml(formatCurrency(report.cashMovements.cashIn, currencySymbol))}</span></div>
+      <div class="row"><span>Salidas</span><span>${escapeHtml(formatCurrency(report.cashMovements.cashOut, currencySymbol))}</span></div>
+      <div class="row strong"><span>Neto Caja</span><span>${escapeHtml(formatCurrency(report.cashMovements.net, currencySymbol))}</span></div>
+    </section>
+    <div class="divider"></div>
+    <footer class="center">
+      <p>Sistema SGP</p>
+    </footer>
+  </article>
+</body>
+</html>`;
+};
+
 export const Sales = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
@@ -339,6 +462,9 @@ export const Sales = () => {
   const [lastCatalogSyncAt, setLastCatalogSyncAt] = useState<string | null>(null);
   const [isLoadingCashHistory, setIsLoadingCashHistory] = useState(false);
   const [cashSessionsHistory, setCashSessionsHistory] = useState<CashSessionHistoryItem[]>([]);
+  const [isLoadingZReport, setIsLoadingZReport] = useState(false);
+  const [zReportData, setZReportData] = useState<ZReportData | null>(null);
+  const [zReportDate, setZReportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [notification, setNotification] = useState<{message: string, isError: boolean} | null>(null);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
@@ -374,7 +500,12 @@ export const Sales = () => {
   
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
   const [searchParams] = useSearchParams();
-  const activeSubmodule: 'pos' | 'cashHistory' = searchParams.get('tab') === 'cash' ? 'cashHistory' : 'pos';
+  const activeSubmodule: 'pos' | 'cashHistory' | 'zReport' =
+    searchParams.get('tab') === 'cash'
+      ? 'cashHistory'
+      : searchParams.get('tab') === 'z'
+        ? 'zReport'
+        : 'pos';
   const companySettingsQuery = useCompanySettings();
   const taxPercentage = companySettingsQuery.data?.taxPercentage ?? 16;
   const currencySymbol = companySettingsQuery.data?.currencySymbol ?? '$';
@@ -898,9 +1029,81 @@ export const Sales = () => {
     }
   };
 
+  const loadZReport = async () => {
+    if (!currentBranchId) {
+      setNotification({ message: 'Selecciona una sucursal para generar el Cierre Z.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
+    setIsLoadingZReport(true);
+    try {
+      const response = await apiClient.get<ZReportResponse>('/sales/reports/z-report', {
+        params: {
+          branchId: currentBranchId,
+          date: zReportDate || undefined,
+        },
+      });
+
+      setZReportData(response.data.data);
+    } catch (error) {
+      console.error('Error loading z report:', error);
+      const apiErrorMessage = isAxiosError(error) ? error.response?.data?.error?.message : undefined;
+      setNotification({ message: apiErrorMessage ?? 'No fue posible generar el reporte Z.', isError: true });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsLoadingZReport(false);
+    }
+  };
+
+  const printZReport = (report: ZReportData) => {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.position = 'fixed';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    frame.style.border = '0';
+
+    const cleanup = () => {
+      window.setTimeout(() => {
+        frame.remove();
+      }, 500);
+    };
+
+    frame.onload = () => {
+      const printWindow = frame.contentWindow;
+      if (!printWindow) {
+        setNotification({ message: 'No se pudo inicializar la ventana de impresion.', isError: true });
+        setTimeout(() => setNotification(null), 4000);
+        cleanup();
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+      cleanup();
+    };
+
+    frame.srcdoc = renderZReportHtml(
+      report,
+      currencySymbol,
+      companySettingsQuery.data?.name ?? 'SGP',
+      companySettingsQuery.data?.taxId ?? 'N/A',
+    );
+    document.body.appendChild(frame);
+  };
+
   useEffect(() => {
     if (activeSubmodule === 'cashHistory') {
       refreshCashSessionsHistory();
+    }
+  }, [activeSubmodule, currentBranchId]);
+
+  useEffect(() => {
+    if (activeSubmodule === 'zReport') {
+      loadZReport();
     }
   }, [activeSubmodule, currentBranchId]);
 
@@ -1397,6 +1600,126 @@ export const Sales = () => {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {activeSubmodule === 'zReport' && (
+        <div className="space-y-6">
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Cierre Diario (Z)</h2>
+                <p className="text-sm text-gray-500">Consolidado de ventas, pagos y movimientos de caja por fecha.</p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="flex flex-col gap-1 text-sm text-gray-700">
+                  Fecha operativa
+                  <input
+                    type="date"
+                    value={zReportDate}
+                    onChange={(e) => setZReportDate(e.target.value)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={loadZReport}
+                  disabled={isLoadingZReport || !currentBranchId}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoadingZReport ? 'Generando...' : 'Generar Cierre Z'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {!isLoadingZReport && !zReportData && (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
+              Selecciona una fecha y genera el reporte para visualizar el cierre diario.
+            </div>
+          )}
+
+          {zReportData && (
+            <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+              <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900">REPORTE DE CIERRE Z</h3>
+                    <p className="text-sm text-gray-500">{zReportData.branchName} | {zReportData.date}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => printZReport(zReportData)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                  >
+                    <Printer size={14} />
+                    Imprimir Cierre Z
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Ventas Brutas</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">{formatMoney(zReportData.grossSales)}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Descuentos</p>
+                    <p className="mt-1 text-lg font-semibold text-orange-700">-{formatMoney(zReportData.discounts)}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Devoluciones</p>
+                    <p className="mt-1 text-lg font-semibold text-red-700">-{formatMoney(zReportData.refunds)}</p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-emerald-700">Ventas Netas</p>
+                    <p className="mt-1 text-lg font-semibold text-emerald-800">{formatMoney(zReportData.netSales)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-gray-200 p-3">
+                  <p className="text-sm font-semibold text-gray-800">Tickets emitidos</p>
+                  <p className="mt-1 text-2xl font-bold text-gray-900">{zReportData.ticketCount}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-900">Desglose por forma de pago</h3>
+                  <div className="mt-3 space-y-2">
+                    {zReportData.paymentBreakdown.length === 0 && (
+                      <p className="text-sm text-gray-500">Sin pagos registrados.</p>
+                    )}
+                    {zReportData.paymentBreakdown.map((payment) => (
+                      <div key={payment.method} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                        <span className="text-gray-700">{formatPaymentMethodLabel(payment.method)}</span>
+                        <span className="font-semibold text-gray-900">{formatMoney(payment.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-900">Movimientos de Caja</h3>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2">
+                      <span className="text-emerald-700">Entradas</span>
+                      <span className="font-semibold text-emerald-800">{formatMoney(zReportData.cashMovements.cashIn)}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2">
+                      <span className="text-amber-700">Salidas</span>
+                      <span className="font-semibold text-amber-800">{formatMoney(zReportData.cashMovements.cashOut)}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
+                      <span className="text-blue-700">Neto</span>
+                      <span className="font-semibold text-blue-800">{formatMoney(zReportData.cashMovements.net)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

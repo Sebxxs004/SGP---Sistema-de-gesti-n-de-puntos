@@ -402,6 +402,124 @@ public class SalesController : ControllerBase
         });
     }
 
+    [HttpGet("reports/z-report")]
+    public async Task<IActionResult> GetZReport([FromQuery] ZReportFilterRequest request, CancellationToken cancellationToken)
+    {
+        if (request.BranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "El parámetro BranchId es obligatorio para generar el Cierre Z." }
+            });
+        }
+
+        var currentBranchId = _currentUser.BranchId;
+        if (currentBranchId == null || currentBranchId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = new { code = "Branch.Required", message = "Debes enviar X-Branch-Id para consultar reportes Z." }
+            });
+        }
+
+        var isAdmin = string.Equals(_currentUser.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+        if (!isAdmin && request.BranchId != currentBranchId.Value)
+        {
+            return Forbid();
+        }
+
+        var branchId = request.BranchId;
+        var reportDate = request.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var dayStart = new DateTimeOffset(reportDate.Year, reportDate.Month, reportDate.Day, 0, 0, 0, TimeSpan.Zero);
+        var dayEnd = dayStart.AddDays(1);
+
+        var completedSales = _dbContext.Sales
+            .AsNoTracking()
+            .Where(s => s.BranchId == branchId
+                && s.Status == SaleStatus.Completed
+                && s.CreatedAt >= dayStart
+                && s.CreatedAt < dayEnd);
+
+        var refundedSales = _dbContext.Sales
+            .AsNoTracking()
+            .Where(s => s.BranchId == branchId
+                && (s.Status == SaleStatus.Refunded || s.IsRefunded)
+                && s.CreatedAt >= dayStart
+                && s.CreatedAt < dayEnd);
+
+        var grossSales = await completedSales.SumAsync(s => (decimal?)s.SubTotal, cancellationToken) ?? 0m;
+        var discounts = await completedSales.SumAsync(s => (decimal?)s.Discount, cancellationToken) ?? 0m;
+        var refunds = await refundedSales.SumAsync(s => (decimal?)s.Total, cancellationToken) ?? 0m;
+        var ticketCount = await completedSales.CountAsync(cancellationToken);
+        var netSales = grossSales - discounts - refunds;
+
+        var paymentBreakdown = await _dbContext.Payments
+            .AsNoTracking()
+            .Where(p => p.Sale != null
+                && p.Sale.BranchId == branchId
+                && p.Sale.Status == SaleStatus.Completed
+                && p.Sale.CreatedAt >= dayStart
+                && p.Sale.CreatedAt < dayEnd)
+            .GroupBy(p => p.Method)
+            .Select(g => new
+            {
+                method = g.Key.ToString(),
+                amount = g.Sum(x => x.Amount)
+            })
+            .OrderBy(x => x.method)
+            .ToListAsync(cancellationToken);
+
+        var cashIn = await _dbContext.CashMovements
+            .AsNoTracking()
+            .Where(m => m.Session != null
+                && m.Session.BranchId == branchId
+                && m.Type == CashMovementType.CashIn
+                && m.CreatedAt >= dayStart
+                && m.CreatedAt < dayEnd)
+            .SumAsync(m => (decimal?)m.Amount, cancellationToken) ?? 0m;
+
+        var cashOut = await _dbContext.CashMovements
+            .AsNoTracking()
+            .Where(m => m.Session != null
+                && m.Session.BranchId == branchId
+                && m.Type == CashMovementType.CashOut
+                && m.CreatedAt >= dayStart
+                && m.CreatedAt < dayEnd)
+            .SumAsync(m => (decimal?)m.Amount, cancellationToken) ?? 0m;
+
+        var branch = await _coreDbContext.Branches
+            .AsNoTracking()
+            .Where(b => b.Id == branchId)
+            .Select(b => new { b.Id, b.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                branchId,
+                branchName = branch?.Name ?? "Sucursal",
+                date = reportDate.ToString("yyyy-MM-dd"),
+                generatedAt = DateTimeOffset.UtcNow,
+                grossSales,
+                discounts,
+                refunds,
+                netSales,
+                ticketCount,
+                paymentBreakdown,
+                cashMovements = new
+                {
+                    cashIn,
+                    cashOut,
+                    net = cashIn - cashOut
+                }
+            }
+        });
+    }
+
     [HttpGet("history/current-session")]
     public async Task<IActionResult> GetCurrentSessionSalesHistory(CancellationToken cancellationToken)
     {
@@ -983,3 +1101,4 @@ public record RefundSaleRequest(string Reason = "Devolución");
 public record RegisterCashMovementRequest(decimal Amount, string Reason, string Type);
 public record CompletePendingSaleRequest(Guid? CustomerId, decimal Discount, List<CreateSaleDetailDto> Details, List<CreateSalePaymentDto> Payments);
 public record ProfitabilityFilterRequest(DateTimeOffset? From, DateTimeOffset? To);
+public record ZReportFilterRequest(Guid BranchId, DateOnly? Date);

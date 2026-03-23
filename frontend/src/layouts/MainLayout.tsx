@@ -19,11 +19,14 @@ export const MainLayout = () => {
   const activeBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal no seleccionada';
   const isPosRoute = location.pathname === '/pos';
   const isCashHistoryTab = searchParams.get('tab') === 'cash';
+  const isZReportTab = searchParams.get('tab') === 'z';
 
-  const handlePosTabChange = (tab: 'pos' | 'cash') => {
+  const handlePosTabChange = (tab: 'pos' | 'cash' | 'z') => {
     const params = new URLSearchParams(searchParams);
     if (tab === 'cash') {
       params.set('tab', 'cash');
+    } else if (tab === 'z') {
+      params.set('tab', 'z');
     } else {
       params.delete('tab');
     }
@@ -105,7 +108,7 @@ export const MainLayout = () => {
                 <button
                   type="button"
                   onClick={() => handlePosTabChange('pos')}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${!isCashHistoryTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${!isCashHistoryTab && !isZReportTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
                 >
                   POS
                 </button>
@@ -115,6 +118,13 @@ export const MainLayout = () => {
                   className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${isCashHistoryTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
                 >
                   Historial de Cajas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePosTabChange('z')}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${isZReportTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+                >
+                  Cierre Diario (Z)
                 </button>
               </div>
             )}
