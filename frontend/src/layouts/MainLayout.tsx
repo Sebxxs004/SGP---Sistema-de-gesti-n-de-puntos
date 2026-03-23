@@ -19,7 +19,7 @@ export const MainLayout = () => {
   const activeBranchName = branches.find((branch) => branch.id === currentBranchId)?.name ?? 'Sucursal no seleccionada';
   const isPosRoute = location.pathname === '/pos';
   const isCashHistoryTab = searchParams.get('tab') === 'cash';
-  const isZReportTab = searchParams.get('tab') === 'z';
+  const isZReportTab = isAdmin && searchParams.get('tab') === 'z';
 
   const handlePosTabChange = (tab: 'pos' | 'cash' | 'z') => {
     const params = new URLSearchParams(searchParams);
@@ -49,6 +49,7 @@ export const MainLayout = () => {
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Inventario', href: '/inventory', icon: Package },
         { name: 'POS Ventas', href: '/pos', icon: ShoppingCart },
+        { name: 'Clientes', href: '/customers', icon: ContactRound },
       ];
 
   return (
@@ -119,13 +120,15 @@ export const MainLayout = () => {
                 >
                   Historial de Cajas
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handlePosTabChange('z')}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${isZReportTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
-                >
-                  Cierre Diario (Z)
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handlePosTabChange('z')}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${isZReportTab ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    Cierre Diario (Z)
+                  </button>
+                )}
               </div>
             )}
           </div>

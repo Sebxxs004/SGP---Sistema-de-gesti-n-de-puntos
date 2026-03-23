@@ -165,7 +165,7 @@ public class BranchesController : ControllerBase
     }
 
     [HttpGet("company/settings")]
-    [Authorize]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetCompanySettings(CancellationToken cancellationToken)
     {
         var tenantId = _tenantService.CurrentTenantId;

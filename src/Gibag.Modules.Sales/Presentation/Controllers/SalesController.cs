@@ -11,6 +11,7 @@ using Gibag.Modules.Inventory.Infrastructure;
 using Gibag.Shared.Interfaces;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gibag.Modules.Sales.Presentation.Controllers;
@@ -343,6 +344,7 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet("reports/profitability")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetProfitabilityReport([FromQuery] ProfitabilityFilterRequest request, CancellationToken cancellationToken)
     {
         if (!string.Equals(_currentUser.Role, "Admin", StringComparison.OrdinalIgnoreCase))
@@ -403,6 +405,7 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet("reports/z-report")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetZReport([FromQuery] ZReportFilterRequest request, CancellationToken cancellationToken)
     {
         if (request.BranchId == Guid.Empty)

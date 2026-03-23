@@ -915,6 +915,7 @@ public class InventoryController : ControllerBase
     }
 
     [HttpGet("reports/kardex")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetKardexReport([FromQuery] KardexReportRequest request, CancellationToken cancellationToken)
     {
         if (!IsAdmin())

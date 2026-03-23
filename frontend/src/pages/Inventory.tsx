@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PackageSearch, Boxes, AlertCircle, Plus, X } from 'lucide-react';
 import apiClient from '../api/apiClient';
@@ -192,6 +192,12 @@ export const Inventory = () => {
   const [productForm, setProductForm] = useState<ProductForm>(defaultProductForm);
   const [showProductModal, setShowProductModal] = useState(false);
   const [stockPage, setStockPage] = useState(1);
+
+  useEffect(() => {
+    if (!isAdmin && activeView === 'kardex') {
+      setActiveView('stock');
+    }
+  }, [activeView, isAdmin]);
 
   const stockQuery = useQuery({
     queryKey: ['inventory-stock', currentBranchId],
@@ -609,13 +615,15 @@ export const Inventory = () => {
           >
             Historial de Movimientos
           </button>
-          <button
-            type="button"
-            className={`rounded-lg px-3 py-2 text-sm font-medium ${activeView === 'kardex' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
-            onClick={() => setActiveView('kardex')}
-          >
-            Kardex
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${activeView === 'kardex' ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}`}
+              onClick={() => setActiveView('kardex')}
+            >
+              Kardex
+            </button>
+          )}
           {isAdmin && (
             <button
               type="button"
@@ -939,7 +947,7 @@ export const Inventory = () => {
         </div>
       )}
 
-      {activeView === 'kardex' && (
+      {isAdmin && activeView === 'kardex' && (
         <div className="space-y-4">
           <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-5">
             {isAdmin && (

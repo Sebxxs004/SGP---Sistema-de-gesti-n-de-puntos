@@ -2,6 +2,7 @@ using Gibag.Modules.Core.Infrastructure;
 using Gibag.Modules.Inventory.Domain;
 using Gibag.Modules.Inventory.Infrastructure;
 using Gibag.Shared.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,7 @@ namespace Gibag.Modules.Inventory.Presentation.Controllers;
 
 [ApiController]
 [Route("api/v1/inventory")]
+[Authorize(Roles = "Admin")]
 public class PurchasesController : ControllerBase
 {
     private readonly InventoryDbContext _dbContext;

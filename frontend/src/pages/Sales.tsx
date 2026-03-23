@@ -499,11 +499,12 @@ export const Sales = () => {
   });
   
   const { tenantId, currentBranchId, currentSessionId, setCurrentSessionId, branches, user } = useAuthStore();
+  const isAdmin = user?.role === 'Admin';
   const [searchParams] = useSearchParams();
   const activeSubmodule: 'pos' | 'cashHistory' | 'zReport' =
     searchParams.get('tab') === 'cash'
       ? 'cashHistory'
-      : searchParams.get('tab') === 'z'
+      : isAdmin && searchParams.get('tab') === 'z'
         ? 'zReport'
         : 'pos';
   const companySettingsQuery = useCompanySettings();

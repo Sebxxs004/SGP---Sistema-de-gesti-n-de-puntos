@@ -32,9 +32,9 @@ function App() {
               <Route path="/pos/open" element={<CashOpening />} />
               <Route path="/pos" element={<Sales />} />
               <Route path="/sales" element={<Navigate to="/pos" replace />} />
+              <Route path="/customers" element={<Customers />} />
               <Route element={<RoleGuard allowedRoles={["Admin"]} />}>
                 <Route path="/users" element={<Users />} />
-                <Route path="/customers" element={<Customers />} />
                 <Route path="/purchases" element={<Purchases />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>

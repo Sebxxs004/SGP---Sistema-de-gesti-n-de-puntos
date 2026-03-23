@@ -71,6 +71,19 @@ interface LowStockAlertsResponse {
   };
 }
 
+interface CurrentSessionHistoryResponse {
+  success: boolean;
+  data: {
+    sessionId: string | null;
+    sales: Array<{
+      id: string;
+      createdAt: string;
+      total: number;
+      status: string;
+    }>;
+  };
+}
+
 export const Dashboard = () => {
   const user = useAuthStore(state => state.user);
   const isAdmin = user?.role === 'Admin';
@@ -81,6 +94,8 @@ export const Dashboard = () => {
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SalesSummaryResponse['data'] | null>(null);
+  const [cashierOwnSalesToday, setCashierOwnSalesToday] = useState(0);
+  const [cashierOwnTicketsToday, setCashierOwnTicketsToday] = useState(0);
   const [profitability, setProfitability] = useState<ProfitabilityResponse['data'] | null>(null);
   const [lowStockAlerts, setLowStockAlerts] = useState<LowStockAlert[]>([]);
   const [actionMessage, setActionMessage] = useState<{ text: string; isError: boolean } | null>(null);
@@ -121,6 +136,35 @@ export const Dashboard = () => {
     } catch (error) {
       console.error('Error fetching profitability stats:', error);
       setProfitability(null);
+    }
+  };
+
+  const refreshCashierOwnStats = async () => {
+    if (!currentBranchId || isAdmin) {
+      setCashierOwnSalesToday(0);
+      setCashierOwnTicketsToday(0);
+      return;
+    }
+
+    try {
+      const response = await apiClient.get<CurrentSessionHistoryResponse>('/sales/history/current-session');
+      const sales = response.data.data.sales ?? [];
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+
+      const ownSalesToday = sales.filter((sale) => {
+        const createdAt = new Date(sale.createdAt);
+        return createdAt >= startOfDay && createdAt < endOfDay;
+      });
+
+      setCashierOwnTicketsToday(ownSalesToday.length);
+      setCashierOwnSalesToday(ownSalesToday.reduce((acc, sale) => acc + sale.total, 0));
+    } catch (error) {
+      console.error('Error fetching cashier stats:', error);
+      setCashierOwnSalesToday(0);
+      setCashierOwnTicketsToday(0);
     }
   };
 
@@ -214,12 +258,14 @@ export const Dashboard = () => {
   useEffect(() => {
     refreshSummary();
     refreshProfitability();
+    refreshCashierOwnStats();
     refreshLowStockAlerts();
     refreshOfflineSales();
 
     const intervalId = window.setInterval(() => {
       refreshSummary();
       refreshProfitability();
+      refreshCashierOwnStats();
       refreshLowStockAlerts();
       refreshOfflineSales();
     }, 30000);
@@ -227,7 +273,7 @@ export const Dashboard = () => {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [currentBranchId]);
+  }, [currentBranchId, isAdmin]);
 
   const weeklyChartData = (summary?.weeklySales ?? []).map(item => ({
     ...item,
@@ -273,25 +319,31 @@ export const Dashboard = () => {
         {/* Metric Card 2 */}
         <div className="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-500">Ventas del Día</h3>
+            <h3 className="text-sm font-medium text-gray-500">{isAdmin ? 'Ventas del Día' : 'Tus ventas de hoy'}</h3>
             <TrendingUp className="text-emerald-500" size={20} />
           </div>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
-            {summary ? formatMoney(summary.totalSalesToday) : formatMoney(0)}
+            {isAdmin
+              ? (summary ? formatMoney(summary.totalSalesToday) : formatMoney(0))
+              : formatMoney(cashierOwnSalesToday)}
           </p>
-          <p className="mt-1 text-sm text-gray-500">Monto total facturado hoy</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {isAdmin ? 'Monto total facturado hoy' : 'Monto total emitido en tu sesión de caja'}
+          </p>
         </div>
 
         {/* Metric Card 3 */}
         <div className="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-500">Tickets del Día</h3>
+            <h3 className="text-sm font-medium text-gray-500">{isAdmin ? 'Tickets del Día' : 'Tickets emitidos por ti'}</h3>
             <Receipt className="text-indigo-500" size={20} />
           </div>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
-            {summary?.ticketsToday ?? 0}
+            {isAdmin ? (summary?.ticketsToday ?? 0) : cashierOwnTicketsToday}
           </p>
-          <p className="mt-1 text-sm text-gray-500">Ventas registradas en la jornada</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {isAdmin ? 'Ventas registradas en la jornada' : 'Comprobantes registrados por tu usuario hoy'}
+          </p>
         </div>
 
         {/* Metric Card 4 */}
