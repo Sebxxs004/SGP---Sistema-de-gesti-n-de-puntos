@@ -1,4 +1,4 @@
-# 🏢 SGP - Sistema de Gestión de Puntos (SaaS B2B)
+# 🏢 SGP - Point Management System (SaaS B2B)
 
 ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=for-the-badge&logo=dotnet)
 ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
@@ -6,53 +6,90 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white)
 
-**SGP (Sistema de Gestión de Puntos)** es una plataforma SaaS B2B diseñada para empresas centralizadas que necesitan administrar múltiples sucursales. Permite la gestión integral de inventario, ventas (POS) y recursos humanos con un aislamiento estricto de datos por inquilino (Multi-Tenant).
+**SGP** is a B2B SaaS platform for centralized companies managing multiple branches.
+It handles inventory, POS sales, and HR with strict per-tenant data isolation (Multi-Tenant).
 
-## ✨ Características Principales
+---
 
-* **Arquitectura Multi-Tenant Segura:** Aislamiento de datos a nivel de ORM mediante `Global Query Filters` (Base de datos compartida, Esquema compartido).
-* **Punto de Venta (POS) Offline-First:** El módulo de ventas funciona incluso sin conexión a internet, almacenando transacciones localmente mediante IndexedDB (`Dexie.js`) y sincronizándolas en segundo plano al recuperar la conexión.
-* **Control de Accesos (RBAC):** Jerarquía estricta de permisos (Super Admin, Admin Empresa, Gerente Sucursal, Cajero) mediante JWT.
-* **Monolito Modular:** Backend estructurado en módulos independientes (Core, Inventory, Sales) siguiendo los principios de Clean Architecture.
+## ✨ Key Features
 
-## 🛠 Stack Tecnológico
+- **Secure Multi-Tenant Architecture:** Data isolation at ORM level via `Global Query Filters`
+  (shared database, shared schema).
+- **Offline-First POS:** Sales module works without internet — transactions are stored locally
+  via IndexedDB (`Dexie.js`) and synced in the background when connectivity is restored.
+- **RBAC Access Control:** Strict permission hierarchy (Super Admin → Company Admin →
+  Branch Manager → Cashier) enforced via JWT.
+- **Modular Monolith:** Backend structured in independent modules (Core, Inventory, Sales)
+  following Clean Architecture principles.
+
+---
+
+## 🛠 Tech Stack
 
 ### Backend
-* **Framework:** C# .NET 10 (LTS)
-* **Arquitectura:** Clean Architecture + Monolito Modular + CQRS (MediatR)
-* **ORM & BD:** Entity Framework Core + PostgreSQL
-* **Testing:** xUnit, FluentAssertions, Moq
+- **Framework:** C# .NET 10
+- **Architecture:** Clean Architecture + Modular Monolith + CQRS (MediatR)
+- **ORM & DB:** Entity Framework Core + PostgreSQL
+- **Testing:** xUnit, FluentAssertions, Moq
 
 ### Frontend
-* **Framework:** React + Vite + TypeScript
-* **Estilos:** Tailwind CSS
-* **Gestión de Estado y API:** TanStack React Query + Zustand + Axios
-* **Almacenamiento Offline:** Dexie.js (IndexedDB)
-* **Testing:** Vitest + React Testing Library
+- **Framework:** React + Vite + TypeScript
+- **Styles:** Tailwind CSS
+- **State & API:** TanStack React Query + Zustand + Axios
+- **Offline Storage:** Dexie.js (IndexedDB)
+- **Testing:** Vitest + React Testing Library
 
-### Infraestructura
-* **Contenedores:** Docker & Docker Compose (Base de datos local + pgAdmin)
+### Infrastructure
+- Docker & Docker Compose (PostgreSQL + pgAdmin)
 
-## 📁 Estructura del Proyecto
+---
 
-El repositorio está dividido en dos aplicaciones principales y una carpeta de documentación (ADN del proyecto para agentes de IA).
+## 🚀 Quick Start
 
-```text
+### Prerequisites
+- .NET 10 SDK
+- Node.js 20+
+- Docker & Docker Compose
+
+### Run locally
+
+```bash
+# 1. Start the database
+docker-compose up -d
+
+# 2. Run the backend
+cd src/Gibag.Api
+dotnet run
+
+# 3. Run the frontend
+cd frontend
+npm install
+npm run dev
+```
+
+- Frontend: http://localhost:5173  
+- API: http://localhost:5000  
+- pgAdmin: http://localhost:5050
+
+---
+
+## 📁 Project Structure
+
+\```
 SGP/
-├── docs/                      # Documentación arquitectónica e instrucciones (Contexto IA)
-├── docker-compose.yml         # Orquestación de BD (PostgreSQL + pgAdmin)
-├── SGP.slnx                   # Solución principal de .NET 10
+├── docs/                        # Architecture docs & AI context
+├── docker-compose.yml           # PostgreSQL + pgAdmin
 │
-├── src/                       # ⚙️ BACKEND (.NET)
-│   ├── Gibag.Api/             # Punto de entrada, Middlewares y Controladores
-│   ├── Gibag.Shared/          # Shared Kernel (Patrón Result, Interfaces Base)
-│   ├── Gibag.Modules.Core/    # Módulo de Autenticación, Usuarios y Tenants
-│   ├── Gibag.Modules.Inventory/ # Módulo de Catálogo y Stock
-│   └── Gibag.Modules.Sales/   # Módulo de Ventas (POS)
+├── src/                         # ⚙️ BACKEND (.NET)
+│   ├── Gibag.Api/               # Entry point, Middlewares, Controllers
+│   ├── Gibag.Shared/            # Shared Kernel (Result pattern, Base interfaces)
+│   ├── Gibag.Modules.Core/      # Auth, Users & Tenants
+│   ├── Gibag.Modules.Inventory/ # Catalog & Stock
+│   └── Gibag.Modules.Sales/     # POS & Sales
 │
-└── frontend/                  # 💻 FRONTEND (React)
-    ├── src/
-    │   ├── features/          # Componentes y lógica agrupados por módulo
-    │   ├── shared/            # Componentes UI reutilizables
-    │   └── services/          # Configuración de Axios, Dexie y Auth
-    └── package.json
+└── frontend/                    # 💻 FRONTEND (React)
+    └── src/
+        ├── features/            # Feature-based components & logic
+        ├── shared/              # Reusable UI components
+        └── services/            # Axios, Dexie & Auth config
+\```
