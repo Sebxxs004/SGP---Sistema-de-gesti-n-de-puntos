@@ -75,7 +75,7 @@ npm run dev
 
 ## 📁 Project Structure
 
-\```
+```text
 SGP/
 ├── docs/                        # Architecture docs & AI context
 ├── docker-compose.yml           # PostgreSQL + pgAdmin
@@ -92,4 +92,4 @@ SGP/
         ├── features/            # Feature-based components & logic
         ├── shared/              # Reusable UI components
         └── services/            # Axios, Dexie & Auth config
-\```
+```
