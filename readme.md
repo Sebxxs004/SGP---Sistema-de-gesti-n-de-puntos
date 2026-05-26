@@ -95,3 +95,4 @@ SGP/
 ```
 
 <a href="https://aulaextendida.udes.edu.co/"> aula estendida </a>
+<a href="https://gemini.google.com/app"> gemini </a>
