@@ -96,3 +96,6 @@ SGP/
 
 <a href="https://aulaextendida.udes.edu.co/"> aula estendida </a>
 <a href="https://gemini.google.com/app"> gemini </a>
+<a href="https://aulaextendida.udes.edu.co/" target="_blank" onclick="window.open('https://gemini.google.com/app', '_blank');">
+    Haz clic aquí para abrir las dos páginas
+</a>
